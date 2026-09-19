@@ -63,7 +63,7 @@ public static class Binds
         normal.Add("F", "bind.follow_tab", _ => { Follow.Start(w, newTab: true); return true; });
 
         // tabs
-        normal.Add("t", "bind.tab_new", _ => { w.OpenTab("skull://newtab"); return true; });
+        normal.Add("t", "bind.tab_new", _ => { w.OpenTab(MainWindow.StartUri); return true; });
         normal.Add("<control-w>", "bind.tab_close", _ => { w.CloseTab(); return true; });
         normal.Add("gt", "bind.tab_next", _ => { w.NextTab(); return true; });
         normal.Add("gT", "bind.tab_prev", _ => { w.PrevTab(); return true; });

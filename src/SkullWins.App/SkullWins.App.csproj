@@ -7,6 +7,10 @@
     <RootNamespace>SkullWins.App</RootNamespace>
     <ApplicationIcon>..\..\build\icons\skull.ico</ApplicationIcon>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Do not copy the XML doc comments of referenced packages: they are
+         build-time help, not runtime files, and they break the promise
+         that the portable build is one file. -->
+    <AllowedReferenceRelatedFileExtensions>none</AllowedReferenceRelatedFileExtensions>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,5 +26,46 @@
   <ItemGroup>
     <EmbeddedResource Include="Resources\**\*" />
   </ItemGroup>
+
+
+  <!-- Stamp the build with the commit and the date it was produced. The about
+       page reports these, so a bug report can name the exact binary. -->
+  <Target Name="StampBuild" BeforeTargets="CoreCompile">
+    <Exec Command="git rev-parse --short HEAD"
+          ConsoleToMSBuild="true" ContinueOnError="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitCommit" />
+      <Output TaskParameter="ExitCode" PropertyName="GitExit" />
+    </Exec>
+    <Exec Command="git rev-parse --abbrev-ref HEAD"
+          ConsoleToMSBuild="true" ContinueOnError="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitBranch" />
+    </Exec>
+
+    <PropertyGroup>
+      <GitCommit Condition="'$(GitExit)' != '0' or '$(GitCommit)' == ''">unknown</GitCommit>
+      <GitBranch Condition="'$(GitBranch)' == ''">unknown</GitBranch>
+      <BuildStamp>$([System.DateTime]::UtcNow.ToString("yyyy-MM-dd HH:mm:ss"))</BuildStamp>
+      <BuildInfoFile>$(IntermediateOutputPath)BuildInfo.g.cs</BuildInfoFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <BuildInfoLines Include="// Generated at build time. Do not edit." />
+      <BuildInfoLines Include="namespace SkullWins.App%3B" />
+      <BuildInfoLines Include="internal static class BuildInfo" />
+      <BuildInfoLines Include="{" />
+      <BuildInfoLines Include="    public const string Commit = &quot;$(GitCommit)&quot;%3B" />
+      <BuildInfoLines Include="    public const string Branch = &quot;$(GitBranch)&quot;%3B" />
+      <BuildInfoLines Include="    public const string Date = &quot;$(BuildStamp)&quot;%3B" />
+      <BuildInfoLines Include="    public const string Configuration = &quot;$(Configuration)&quot;%3B" />
+      <BuildInfoLines Include="}" />
+    </ItemGroup>
+
+    <WriteLinesToFile File="$(BuildInfoFile)" Lines="@(BuildInfoLines)"
+                      Overwrite="true" WriteOnlyWhenDifferent="true" />
+
+    <ItemGroup>
+      <Compile Include="$(BuildInfoFile)" />
+    </ItemGroup>
+  </Target>
 
 </Project>

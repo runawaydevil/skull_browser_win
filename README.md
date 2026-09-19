@@ -12,12 +12,14 @@ a design and no code.
 
 ## What works
 
+    starts on google      configurable, skull://newtab is still there
     modal navigation      normal, insert, command, passthrough
     tabs                  open, close, cycle, numbered in the status bar
     link hints            press f, type the label, go
     gopher://             menus, text, search, binary items
     https and http        rendered by WebView2, the Edge engine
     skull:// pages        about, help, history, bookmarks, log, newtab
+    about page            build, commit, engine, runtime, machine, profile
     history, bookmarks    SQLite, with search
     two languages         English and Brazilian Portuguese
 
@@ -75,6 +77,17 @@ A single-file portable executable:
 Commands: open, tabopen, quit, quitall, reload, back, forward, about, help,
 history, bookmarks, bookmark, gopher, log. Most have short aliases; see
 skull://help.
+
+
+## What about reports
+
+skull://about, or press gA, prints the exact binary you are running and what
+it is running on: version and codename, build date and commit, whether the
+build is a single file or a folder, the WebView2 and .NET versions, the
+operating system and its build number, processors and memory, the profile
+path, and how many pages and bookmarks are stored.
+
+A bug report with that page in it names the exact binary.
 
 
 ## Configuration

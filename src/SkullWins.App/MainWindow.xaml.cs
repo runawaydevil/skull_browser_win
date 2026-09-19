@@ -17,7 +17,11 @@ namespace SkullWins.App;
 public partial class MainWindow : Window
 {
     private const string Scheme = "skull";
-    private const string StartUri = "skull://newtab";
+    /// <summary>
+    /// Where a fresh window and a fresh tab land. Google by default; rc.lua can
+    /// point it anywhere, including skull://newtab for the built-in start page.
+    /// </summary>
+    public static string StartUri { get; set; } = "https://www.google.com";
 
     private CoreWebView2Environment? _env;
     private readonly List<Tab> _tabs = new();
@@ -479,7 +483,7 @@ public partial class MainWindow : Window
 
         return page.ToLowerInvariant() switch
         {
-            "about" => Pages.About(_locale, _env?.BrowserVersionString ?? "?"),
+            "about" => Pages.About(_locale, Facts()),
             "help" or "binds" => Pages.Help(_locale, HelpRows()),
             "history" => Pages.History(_locale, _history?.Recent(200) ?? []),
             "bookmarks" => Pages.Bookmarks(_locale, _bookmarks?.All() ?? []),
@@ -487,6 +491,35 @@ public partial class MainWindow : Window
             "log" => Pages.GopherText("skull://log", ReadLog()),
             _ => Pages.Error(_locale, "error.scheme", "no such internal page: " + page, uri),
         };
+    }
+
+    /// <summary>Gather everything skull://about reports.</summary>
+    private AboutFacts Facts() => new(
+        Codename: Pages.Codename,
+        BuildYear: SystemInfo.BuildYear,
+        BuildDate: SystemInfo.BuildDate,
+        Commit: SystemInfo.Commit,
+        Branch: SystemInfo.Branch,
+        Configuration: SystemInfo.Configuration,
+        SingleFile: SystemInfo.IsSingleFile,
+        Runtime: _env?.BrowserVersionString ?? "-",
+        DotNet: SystemInfo.DotNet,
+        Architecture: SystemInfo.Architecture,
+        Os: SystemInfo.Os,
+        OsArchitecture: SystemInfo.OsArchitecture,
+        Cpus: SystemInfo.Cpus,
+        Memory: SystemInfo.Memory,
+        Uptime: SystemInfo.Uptime,
+        Language: _locale.Active,
+        ProfileDir: Profile.Dir,
+        ExecutablePath: SystemInfo.ExecutablePath,
+        HistoryCount: SafeCount(() => _history?.Count() ?? 0),
+        BookmarkCount: SafeCount(() => _bookmarks?.All().Count ?? 0));
+
+    private static string SafeCount(Func<int> read)
+    {
+        try { return read().ToString(); }
+        catch { return "-"; }
     }
 
     private IEnumerable<(string, string)> HelpRows()

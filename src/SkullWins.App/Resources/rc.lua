@@ -14,5 +14,6 @@
 -- The search engine used when what you typed is not an address.
 -- skull.search = "https://duckduckgo.com/?q="
 
--- The page a new tab opens on.
--- skull.newtab = "skull://newtab"
+-- Where a new window and a new tab land. Google by default.
+-- skull.newtab = "https://www.google.com"
+-- skull.newtab = "skull://newtab"   -- the built-in start page instead

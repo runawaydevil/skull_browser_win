@@ -23,7 +23,7 @@ public static class Commands
                 break;
 
             case "t" or "tabopen":
-                _ = w.NewTab(arg.Length > 0 ? Uris.Resolve(arg) : "skull://newtab");
+                _ = w.NewTab(arg.Length > 0 ? Uris.Resolve(arg) : MainWindow.StartUri);
                 break;
 
             case "q" or "quit" or "close":
