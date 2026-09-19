@@ -50,6 +50,7 @@ public static class Profile
     public static string BookmarksDb => Path.Combine(Dir, "bookmarks.db");
     public static string TrustDb => Path.Combine(Dir, "trust.db");
     public static string IdentitiesDir => Path.Combine(Dir, "identities");
+    public static string IdentitiesDb => Path.Combine(Dir, "identities.db");
     public static string RcLua => Path.Combine(Dir, "rc.lua");
     public static string ThemeLua => Path.Combine(Dir, "theme.lua");
     public static string LogFile => Path.Combine(Dir, "skull.log");

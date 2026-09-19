@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using SkullWins.App.Browser;
@@ -43,6 +44,12 @@ public partial class MainWindow : Window
     private readonly GopherClient _gopher = new();
     private readonly GeminiClient _gemini = new();
     private TrustStore? _trust;
+    private IdentityStore? _identities;
+
+    // What the last gemini handshake presented, and for whom. :cert needs it
+    // to show a fingerprint, and :cert accept needs it to pin the one the user
+    // just looked at rather than whatever arrives next.
+    private (string Host, int Port, CertificateFacts Facts)? _lastCertificate;
     private string _inputScript = "";
 
     public MainWindow()
@@ -79,6 +86,7 @@ public partial class MainWindow : Window
             _history = new HistoryStore(Profile.HistoryDb);
             _bookmarks = new BookmarkStore(Profile.BookmarksDb);
             _trust = new TrustStore(Profile.TrustDb);
+            _identities = new IdentityStore(Profile.IdentitiesDb);
         }
         catch (Exception ex)
         {
@@ -803,7 +811,8 @@ public partial class MainWindow : Window
 
             for (var hop = 0; ; hop++)
             {
-                var response = await _gemini.FetchAsync(current, TrustCertificate);
+                using var identity = IdentityFor(current);
+                var response = await _gemini.FetchAsync(current, TrustCertificate, identity);
 
                 if (!response.Ok)
                 {
@@ -844,6 +853,16 @@ public partial class MainWindow : Window
                     case GeminiClass.Input:
                         Respond(e, Pages.GeminiInput(_locale, current, response.Meta,
                             Gemini.IsSensitiveInput(response.Status)), "text/html");
+                        return;
+
+                    case GeminiClass.CertificateRequired:
+                        // Never resolved by generating something. The
+                        // specification requires the user to be involved, and
+                        // a certificate made behind their back is a name they
+                        // did not choose to have.
+                        Respond(e, Pages.CertificateRequired(
+                            _locale, current, response.Status, response.Meta,
+                            Identities.All()), "text/html");
                         return;
 
                     default:
@@ -896,6 +915,8 @@ public partial class MainWindow : Window
 
         try
         {
+            _lastCertificate = (host, port, certificate);
+
             var verdict = _trust.Check(host, port, certificate.Fingerprint, certificate.NotAfter);
 
             if (verdict == TrustVerdict.Changed)
@@ -919,6 +940,202 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>What is pinned for the site in front, as a page.</summary>
+    public void ShowCertificate()
+    {
+        var host = CurrentHostPort();
+        if (host is null || _trust is null)
+        {
+            Notify(_locale.Translate("cert.nothost"));
+            return;
+        }
+
+        var pinned = _trust.Find(host.Value.Host, host.Value.Port);
+        var seen = _lastCertificate is { } last
+            && last.Host == host.Value.Host && last.Port == host.Value.Port
+                ? last.Facts
+                : null;
+
+        LoadPage(Pages.Certificate(_locale, host.Value.Host, host.Value.Port, pinned, seen));
+    }
+
+    /// <summary>
+    /// Pin the certificate the user was just shown.
+    ///
+    /// Without this a capsule that rotates its certificate early is refused
+    /// and stays refused, with no way to say "I looked at it and it is fine".
+    /// A security measure with no escape hatch is a way to lose a site
+    /// permanently, which is worse than the risk it guards against.
+    /// </summary>
+    public void AcceptCertificate()
+    {
+        var host = CurrentHostPort();
+        if (host is null || _trust is null)
+        {
+            Notify(_locale.Translate("cert.nothost"));
+            return;
+        }
+
+        if (_lastCertificate is not { } last
+            || last.Host != host.Value.Host || last.Port != host.Value.Port)
+        {
+            // Accepting something nobody has seen would pin whatever turns up
+            // next, which is the opposite of a deliberate decision.
+            Notify(_locale.Translate("cert.nothingseen"));
+            return;
+        }
+
+        _trust.Accept(last.Host, last.Port, last.Facts.Fingerprint, last.Facts.NotAfter);
+        Notify(_locale.Translate("cert.accepted", last.Host));
+        Reload();
+    }
+
+    public void ForgetCertificate()
+    {
+        var host = CurrentHostPort();
+        if (host is null || _trust is null)
+        {
+            Notify(_locale.Translate("cert.nothost"));
+            return;
+        }
+
+        var gone = _trust.Forget(host.Value.Host, host.Value.Port);
+        Notify(_locale.Translate(gone ? "cert.forgotten" : "cert.notpinned", host.Value.Host));
+    }
+
+    /// <summary>The host and port of the page in front, when it has one.</summary>
+    private (string Host, int Port)? CurrentHostPort()
+    {
+        var uri = CurrentUri;
+        if (uri.Length == 0) { return null; }
+
+        try
+        {
+            var parsed = new Uri(uri, UriKind.Absolute);
+            if (parsed.Scheme is not ("gemini" or "gopher" or "https" or "http")) { return null; }
+
+            return (parsed.Host,
+                    parsed.IsDefaultPort && parsed.Scheme == "gemini"
+                        ? Gemini.DefaultPort
+                        : parsed.Port);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Show generated HTML in the current tab without a round trip.</summary>
+    private void LoadPage(string html)
+    {
+        try { Current?.View.CoreWebView2?.NavigateToString(html); }
+        catch (Exception ex) { Log("could not show page: " + ex.Message); }
+    }
+
+    /// <summary>
+    /// The identity attached to this address, if any. Loaded fresh each time
+    /// rather than cached, because the file on disk is the source of truth and
+    /// a deleted identity must stop being offered immediately.
+    /// </summary>
+    private X509Certificate2? IdentityFor(string uri)
+    {
+        if (_identities is null) { return null; }
+
+        try
+        {
+            var (host, port, path) = Gemini.ParseUri(uri);
+            var name = _identities.Match(host, port, path);
+            return name is null ? null : Identities.Load(name);
+        }
+        catch (Exception ex)
+        {
+            Log("could not pick an identity for " + uri + ": " + ex.Message);
+            return null;
+        }
+    }
+
+    public void ShowIdentities()
+        => LoadPage(Pages.Identities(_locale, Identities.All(), _identities?.All() ?? []));
+
+    public void CreateIdentity(string name)
+    {
+        if (!ClientCertificates.IsValidName(name))
+        {
+            Notify(_locale.Translate("identity.badname", name));
+            return;
+        }
+
+        try
+        {
+            Identities.Create(name);
+            Notify(_locale.Translate("identity.created", name));
+        }
+        catch (Exception ex)
+        {
+            Notify(_locale.Translate("identity.createfailed", ex.Message));
+        }
+    }
+
+    /// <summary>Attach an identity to the capsule and directory in front.</summary>
+    public void UseIdentity(string name)
+    {
+        if (_identities is null) { return; }
+
+        if (!Identities.Exists(name))
+        {
+            Notify(_locale.Translate("identity.unknown", name));
+            return;
+        }
+
+        var scope = GeminiScope();
+        if (scope is null)
+        {
+            Notify(_locale.Translate("identity.notgemini"));
+            return;
+        }
+
+        var (host, port, path) = scope.Value;
+        _identities.Attach(name, host, port, path);
+        Notify(_locale.Translate("identity.attached", name, host + IdentityStore.Normalise(path)));
+        Reload();
+    }
+
+    public void DropIdentity()
+    {
+        if (_identities is null) { return; }
+
+        var scope = GeminiScope();
+        if (scope is null)
+        {
+            Notify(_locale.Translate("identity.notgemini"));
+            return;
+        }
+
+        var (host, port, path) = scope.Value;
+        var gone = _identities.Detach(host, port, path);
+        Notify(_locale.Translate(gone ? "identity.detached" : "identity.notattached", host));
+        if (gone) { Reload(); }
+    }
+
+    public void ForgetIdentity(string name)
+    {
+        if (!Identities.Exists(name))
+        {
+            Notify(_locale.Translate("identity.unknown", name));
+            return;
+        }
+
+        _identities?.DetachAll(name);
+        Notify(_locale.Translate(
+            Identities.Delete(name) ? "identity.forgotten" : "identity.forgetfailed", name));
+    }
+
+    private (string Host, int Port, string Path)? GeminiScope()
+    {
+        var uri = CurrentUri;
+        if (!uri.StartsWith("gemini://", StringComparison.OrdinalIgnoreCase)) { return null; }
+
+        try { return Gemini.ParseUri(uri); }
+        catch { return null; }
+    }
+
     private string Internal(string uri)
     {
         var page = uri["skull://".Length..].TrimEnd('/');
@@ -931,6 +1148,7 @@ public partial class MainWindow : Window
             "help" or "binds" => Pages.Help(_locale, HelpRows()),
             "history" => Read(() => Pages.History(_locale, _history?.Recent(200) ?? [])),
             "bookmarks" => Read(() => Pages.Bookmarks(_locale, _bookmarks?.All() ?? [])),
+            "identities" => Pages.Identities(_locale, Identities.All(), _identities?.All() ?? []),
             "newtab" or "" => Pages.NewTab(_locale),
             "log" => Pages.GopherText("skull://log", ReadLog()),
             _ => Pages.Error(_locale, "error.scheme", "no such internal page: " + page, uri),
@@ -1104,6 +1322,7 @@ public partial class MainWindow : Window
         _history?.Dispose();
         _bookmarks?.Dispose();
         _trust?.Dispose();
+        _identities?.Dispose();
         base.OnClosed(e);
     }
 }

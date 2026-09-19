@@ -149,7 +149,7 @@ public static class Gopher
     {
         if (!Uri.TryCreate(target, UriKind.Absolute, out var uri)) { return false; }
 
-        return uri.Scheme is "http" or "https" or "gopher";
+        return uri.Scheme is "http" or "https" or "gopher" or "gemini";
     }
 
     /// <summary>

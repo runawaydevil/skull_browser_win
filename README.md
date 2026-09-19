@@ -4,7 +4,7 @@ A keyboard-driven web browser for Windows. Modal navigation in the vim
 tradition, gopher as a first-class protocol, and configuration that is code
 rather than a settings screen.
 
-Version 0.12, by Pablo Murad. Windows only.
+Version 0.20, by Pablo Murad. Windows only.
 
 This is a separate program from Skull Browser, which runs on Linux. They share
 a design and no code.
@@ -17,14 +17,15 @@ a design and no code.
     tabs                  open, close, cycle, numbered in the status bar
     link hints            press f, type the label, go
     gopher://             menus, text, search, binary items
+    gemini://             TLS, gemtext, redirects, input prompts, identities
     https and http        rendered by WebView2, the Edge engine
     skull:// pages        about, help, history, bookmarks, log, newtab
     about page            build, commit, engine, runtime, machine, profile
     history, bookmarks    SQLite, with search
     two languages         English and Brazilian Portuguese
 
-Not in 0.12: ad blocking, form filling, user stylesheets, proxies, tab groups,
-private mode, gemini. The gemini scheme is registered but nothing answers it.
+Not in 0.20: ad blocking, form filling, user stylesheets, proxies, tab groups,
+private mode, session restore.
 
 
 ## Requirements
@@ -115,6 +116,61 @@ Escape gets you back.
 Commands: open, tabopen, quit, quitall, reload, back, forward, about, help,
 history, bookmarks, bookmark, gopher, log. Most have short aliases; see
 skull://help.
+
+
+## Where it keeps things
+
+One executable, no installer, nothing to unpack. Data goes in `skull-data`
+beside the binary when that folder can be written to, so a copy on a stick
+carries its history, its pinned certificates and its identities with it. When
+it cannot, because the program sits under Program Files or on a locked stick,
+it falls back to `%APPDATA%\skull`. `skull://about` says which one is in use.
+
+    --portable        insist on beside the executable
+    --no-portable     insist on %APPDATA%
+    --profile=PATH    somewhere else
+
+An existing `%APPDATA%` profile is copied across once, the first time a
+portable copy runs, so upgrading does not look like losing your history.
+
+**It never makes itself your default browser.** No protocol association, no
+registry writes, nothing outside its own profile. Links clicked in other
+programs will not open here, and that is on purpose.
+
+
+## Gemini
+
+Capsules are self-signed as a matter of course, so ordinary certificate
+validation would refuse nearly all of them. Skull Wins pins instead: a host is
+remembered the first time you see it, and a certificate that changes while the
+pinned one is still valid is refused, because that is what an interception
+looks like.
+
+    :cert             what is pinned for this host
+    :cert accept      trust a changed certificate, deliberately
+    :cert forget      unpin, so the next visit pins afresh
+
+An identity is a client certificate: it is how a capsule knows you between
+visits, and gemini has nothing else resembling a login. Nothing is ever
+generated for you, because the specification forbids it without your
+involvement.
+
+    :identity             list them
+    :identity new NAME    make one
+    :identity use NAME    attach it to this capsule and directory
+    :identity drop        stop using it here
+    :identity forget NAME delete it and its key
+
+An identity covers the directory it was attached in and everything below, so
+attaching while reading one post covers its siblings and nothing above them.
+
+The key file has no passphrase, like an unencrypted SSH key: whoever holds the
+file is you. Under a portable profile that file sits beside the executable.
+Loading one also imports its key into a container on the machine you are
+running on, which is what Windows requires for TLS to use it at all, so a
+portable copy is not quite traceless.
+
+Gopher has no identities. The protocol has no authentication to attach one to.
 
 
 ## Configuration

@@ -70,6 +70,39 @@ public static class Commands
                 w.Navigate("skull://log");
                 break;
 
+            case "identity" or "id":
+            {
+                var gap = arg.IndexOf(' ');
+                var verb = (gap < 0 ? arg : arg[..gap]).ToLowerInvariant();
+                var who = gap < 0 ? "" : arg[(gap + 1)..].Trim();
+
+                switch (verb)
+                {
+                    case "new": w.CreateIdentity(who); break;
+                    case "use": w.UseIdentity(who); break;
+                    case "drop": w.DropIdentity(); break;
+                    case "forget": w.ForgetIdentity(who); break;
+                    default: w.ShowIdentities(); break;
+                }
+                break;
+            }
+
+            case "cert":
+                switch (arg.ToLowerInvariant())
+                {
+                    case "accept": w.AcceptCertificate(); break;
+                    case "forget": w.ForgetCertificate(); break;
+                    default: w.ShowCertificate(); break;
+                }
+                break;
+
+            case "gemini":
+                w.Navigate(arg.Length > 0
+                    ? (arg.StartsWith("gemini://", StringComparison.OrdinalIgnoreCase)
+                        ? arg : "gemini://" + arg)
+                    : "gemini://geminiprotocol.net/");
+                break;
+
             case "gopher":
                 w.Navigate(arg.Length > 0
                     ? (arg.StartsWith("gopher://", StringComparison.OrdinalIgnoreCase)

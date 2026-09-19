@@ -12,11 +12,11 @@ namespace SkullWins.Core;
 /// </summary>
 public static class Pages
 {
-    public const string Version = "0.12";
+    public const string Version = "0.20";
     public const string Author = "Pablo Murad";
     public const string Homepage = "https://pablomurad.com";
     public const string Repository = "https://github.com/runawaydevil/skull_browser_win";
-    public const string Codename = "steady";
+    public const string Codename = "small web";
 
     public static string Style => """
         :root {
@@ -95,7 +95,7 @@ public static class Pages
             <p class="sub">{Esc(t.Translate("about.tagline"))}</p>
             <table>{rows}</table>
             <h2>{Esc(t.Translate("about.protocols"))}</h2>
-            <p>https, http, <a href="gopher://gopher.floodgap.com">gopher</a>, skull</p>
+            <p>https, http, <a href="gopher://gopher.floodgap.com">gopher</a>, <a href="gemini://geminiprotocol.net/">gemini</a>, skull</p>
             """);
     }
 
@@ -241,6 +241,159 @@ public static class Pages
     /// being asked before typing into it. A status 11 is asking for something
     /// that should not be echoed, and the field says so.
     /// </summary>
+    /// <summary>
+    /// What is pinned for a host, and what it last presented.
+    ///
+    /// Shown when the two disagree, which is the moment the user has to decide
+    /// something, so both fingerprints are on screen together rather than one
+    /// at a time.
+    /// </summary>
+    /// <summary>
+    /// A capsule asking for a client certificate, status 6x.
+    ///
+    /// Nothing is created here. The specification says a client must not
+    /// generate a certificate and repeat the request without the user being
+    /// involved, so this page explains what is being asked and names the
+    /// command. The decision stays with the person.
+    /// </summary>
+    public static string CertificateRequired(
+        Locale t, string uri, int status, string meta, IReadOnlyList<string> available)
+    {
+        var list = new StringBuilder();
+        if (available.Count > 0)
+        {
+            foreach (var name in available)
+            {
+                list.Append("<tr><td class=\"num\"><kbd>:identity use ").Append(Esc(name))
+                    .Append("</kbd></td><td>").Append(Esc(name)).Append("</td></tr>");
+            }
+        }
+
+        var body = available.Count > 0
+            ? $"<h2>{Esc(t.Translate("identity.available"))}</h2><table>{list}</table>"
+            : $"<p class=\"empty\">{Esc(t.Translate("identity.none"))}</p>"
+              + $"<h2>{Esc(t.Translate("identity.make"))}</h2>"
+              + "<table><tr><td class=\"num\"><kbd>:identity new NAME</kbd></td><td>"
+              + Esc(t.Translate("identity.cmd.new")) + "</td></tr></table>";
+
+        return Shell(uri, $"""
+            <h1>{Esc(t.Translate("identity.required"))}</h1>
+            <p class="sub">{Esc(uri)}</p>
+            <p>{Esc(meta.Length > 0 ? meta : Gemini.Describe(status))}</p>
+            <p>{Esc(t.Translate("identity.required.body"))}</p>
+            {body}
+            """);
+    }
+
+    /// <summary>Every identity, and where each one is used.</summary>
+    public static string Identities(
+        Locale t, IReadOnlyList<string> names, IReadOnlyList<IdentityScope> scopes)
+    {
+        var body = new StringBuilder();
+
+        if (names.Count == 0)
+        {
+            body.Append("<p class=\"empty\">").Append(Esc(t.Translate("identity.none")))
+                .Append("</p>");
+        }
+
+        foreach (var name in names)
+        {
+            body.Append("<h2>").Append(Esc(name)).Append("</h2>");
+
+            var used = scopes.Where(x => x.Name == name).ToList();
+            if (used.Count == 0)
+            {
+                body.Append("<p class=\"sub\">").Append(Esc(t.Translate("identity.unused")))
+                    .Append("</p>");
+                continue;
+            }
+
+            body.Append("<table>");
+            foreach (var scope in used)
+            {
+                body.Append("<tr><td><code>").Append(Esc(scope.Host));
+                if (scope.Port != 1965) { body.Append(':').Append(scope.Port); }
+                body.Append(Esc(scope.Path)).Append("</code></td></tr>");
+            }
+            body.Append("</table>");
+        }
+
+        return Shell("identities", $"""
+            <h1>{Esc(t.Translate("identity.title"))}</h1>
+            <p class="sub">{Esc(t.Translate("identity.sub"))}</p>
+            {body}
+            <h2>{Esc(t.Translate("cert.commands"))}</h2>
+            <table>
+              <tr><td class="num"><kbd>:identity new NAME</kbd></td>
+                  <td>{Esc(t.Translate("identity.cmd.new"))}</td></tr>
+              <tr><td class="num"><kbd>:identity use NAME</kbd></td>
+                  <td>{Esc(t.Translate("identity.cmd.use"))}</td></tr>
+              <tr><td class="num"><kbd>:identity drop</kbd></td>
+                  <td>{Esc(t.Translate("identity.cmd.drop"))}</td></tr>
+              <tr><td class="num"><kbd>:identity forget NAME</kbd></td>
+                  <td>{Esc(t.Translate("identity.cmd.forget"))}</td></tr>
+            </table>
+            <p class="sub">{Esc(t.Translate("identity.gopher"))}</p>
+            """);
+    }
+
+    public static string Certificate(
+        Locale t, string host, int port, PinnedHost? pinned, CertificateFacts? seen)
+    {
+        static string Row(string label, string value) =>
+            $"<tr><th>{Esc(label)}</th><td>{value}</td></tr>";
+
+        static string When(long unix) =>
+            DateTimeOffset.FromUnixTimeSeconds(unix).LocalDateTime.ToString("yyyy-MM-dd HH:mm");
+
+        var rows = new StringBuilder();
+        rows.Append(Row(t.Translate("cert.host"), Esc(host + ":" + port)));
+
+        if (pinned is not null)
+        {
+            rows.Append(Row(t.Translate("cert.pinned"),
+                "<code>" + Esc(pinned.Fingerprint) + "</code>"));
+            rows.Append(Row(t.Translate("cert.firstseen"), Esc(When(pinned.FirstSeen))));
+            rows.Append(Row(t.Translate("cert.lastseen"), Esc(When(pinned.LastSeen))));
+            rows.Append(Row(t.Translate("cert.expires"), Esc(When(pinned.NotAfter))));
+        }
+
+        if (seen is not null)
+        {
+            rows.Append(Row(t.Translate("cert.presented"),
+                "<code>" + Esc(seen.Fingerprint) + "</code>"));
+            rows.Append(Row(t.Translate("cert.subject"), Esc(seen.Subject)));
+        }
+
+        var mismatch = pinned is not null && seen is not null
+            && !string.Equals(pinned.Fingerprint, seen.Fingerprint,
+                StringComparison.OrdinalIgnoreCase);
+
+        var warning = mismatch
+            ? $"<div class=\"err\"><h1>{Esc(t.Translate("cert.changed"))}</h1>"
+              + $"<p>{Esc(t.Translate("cert.changed.body"))}</p></div>"
+            : "";
+
+        var body = pinned is null && seen is null
+            ? $"<p class=\"empty\">{Esc(t.Translate("cert.none"))}</p>"
+            : $"<table>{rows}</table>";
+
+        return Shell("certificate", $"""
+            <h1>{Esc(t.Translate("cert.title"))}</h1>
+            <p class="sub">{Esc(host)}:{port}</p>
+            {warning}
+            {body}
+            <h2>{Esc(t.Translate("cert.commands"))}</h2>
+            <table>
+              <tr><td class="num"><kbd>:cert accept</kbd></td>
+                  <td>{Esc(t.Translate("cert.cmd.accept"))}</td></tr>
+              <tr><td class="num"><kbd>:cert forget</kbd></td>
+                  <td>{Esc(t.Translate("cert.cmd.forget"))}</td></tr>
+            </table>
+            """);
+    }
+
     public static string GeminiInput(Locale t, string uri, string prompt, bool sensitive)
     {
         var key = sensitive ? "gemini.input.sensitive" : "gemini.input";

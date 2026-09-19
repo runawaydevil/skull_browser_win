@@ -88,7 +88,7 @@ public class PageTests
         l.Load("en", new Dictionary<string, string>
         {
             ["about.portable"] = "single file, portable",
-            ["about.folder"] = "folder with dependencies",
+            
         });
         l.Use("en");
         return l;
