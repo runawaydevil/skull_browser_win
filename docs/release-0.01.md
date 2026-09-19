@@ -112,3 +112,9 @@ GNU GPLv3.
 
 Pablo Murad, https://pablomurad.com
 https://github.com/runawaydevil/skull_browser_win
+
+
+## Checksum
+
+    sha256  01f22b7ae195e063ac2539d59cb57027247f2bd6a72e0ddd9e4735822ca42688
+            skull-0.01-win-x64.exe
