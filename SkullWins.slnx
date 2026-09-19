@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SkullWins.App/SkullWins.App.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/SkullWins.Core/SkullWins.Core.csproj" />
+    <Project Path="src/SkullWins.Protocols/SkullWins.Protocols.csproj" />
+    <Project Path="src/SkullWins.Storage/SkullWins.Storage.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SkullWins.Tests/SkullWins.Tests.csproj">
+      <Platform Project="x64" />
+    </Project>
+  </Folder>
+</Solution>

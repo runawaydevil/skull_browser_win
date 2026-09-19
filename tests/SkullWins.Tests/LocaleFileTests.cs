@@ -1,0 +1,67 @@
+using System.Text.RegularExpressions;
+using Xunit;
+
+namespace SkullWins.Tests;
+
+/// <summary>
+/// Reads the shipped catalogues off disk and fails the build when they drift
+/// apart. Without this a translation rots inside a fortnight: someone adds an
+/// English string, nobody adds the Portuguese one, and the interface quietly
+/// turns bilingual in the wrong way.
+/// </summary>
+public class LocaleFileTests
+{
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "LICENSE")))
+        {
+            dir = dir.Parent;
+        }
+        Assert.NotNull(dir);
+        return dir!.FullName;
+    }
+
+    private static HashSet<string> KeysOf(string language)
+    {
+        var path = Path.Combine(RepoRoot(), "lua", "locale", language + ".lua");
+        Assert.True(File.Exists(path), "missing catalogue: " + path);
+
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Match m in Regex.Matches(File.ReadAllText(path), """\["([^"]+)"\]\s*="""))
+        {
+            keys.Add(m.Groups[1].Value);
+        }
+        return keys;
+    }
+
+    [Fact]
+    public void English_and_portuguese_define_the_same_keys()
+    {
+        var en = KeysOf("en");
+        var pt = KeysOf("pt_BR");
+
+        var missingFromPt = en.Except(pt).Order(StringComparer.Ordinal).ToList();
+        var missingFromEn = pt.Except(en).Order(StringComparer.Ordinal).ToList();
+
+        Assert.True(missingFromPt.Count == 0,
+            "missing from pt_BR: " + string.Join(", ", missingFromPt));
+        Assert.True(missingFromEn.Count == 0,
+            "missing from en: " + string.Join(", ", missingFromEn));
+    }
+
+    [Fact]
+    public void Catalogues_are_not_empty()
+    {
+        Assert.True(KeysOf("en").Count > 50);
+        Assert.True(KeysOf("pt_BR").Count > 50);
+    }
+
+    [Fact]
+    public void Every_bind_description_key_is_translated()
+    {
+        var en = KeysOf("en");
+        var bindKeys = en.Where(k => k.StartsWith("bind.", StringComparison.Ordinal)).ToList();
+        Assert.True(bindKeys.Count > 20, "expected the bind descriptions to be catalogued");
+    }
+}

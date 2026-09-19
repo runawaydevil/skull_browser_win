@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>skull</AssemblyName>
+    <RootNamespace>SkullWins.App</RootNamespace>
+    <ApplicationIcon>..\..\build\icons\skull.ico</ApplicationIcon>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SkullWins.Core\SkullWins.Core.csproj" />
+    <ProjectReference Include="..\SkullWins.Protocols\SkullWins.Protocols.csproj" />
+    <ProjectReference Include="..\SkullWins.Storage\SkullWins.Storage.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\**\*" />
+  </ItemGroup>
+
+</Project>

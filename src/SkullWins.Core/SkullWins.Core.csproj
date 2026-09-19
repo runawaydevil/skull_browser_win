@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NLua" Version="1.7.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SkullWins.Protocols\SkullWins.Protocols.csproj" />
+    <ProjectReference Include="..\SkullWins.Storage\SkullWins.Storage.csproj" />
+  </ItemGroup>
+
+</Project>
