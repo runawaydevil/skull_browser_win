@@ -19,6 +19,16 @@ public partial class App : Application
     {
         if (HandleConsoleCommands(e.Args)) { return; }
 
+        // Last resort. Everything that can fail is guarded where it fails, but
+        // a browser that vanishes without a word is the worst way to lose a
+        // session. This turns an unexpected escape into a message and a line in
+        // the log, and keeps the window open.
+        DispatcherUnhandledException += (_, args) =>
+        {
+            SkullWins.App.MainWindow.Log("unhandled: " + args.Exception);
+            args.Handled = true;
+        };
+
         base.OnStartup(e);
         new MainWindow().Show();
     }
@@ -47,6 +57,11 @@ public partial class App : Application
 
                 case "--init":
                     Print(Init());
+                    Shutdown(0);
+                    return true;
+
+                case "--sysinfo":
+                    Print(SysInfo());
                     Shutdown(0);
                     return true;
 
@@ -81,6 +96,7 @@ public partial class App : Application
         usage: skull [options] [url ...]
 
           --init            write the configuration into %APPDATA%\skull
+          --sysinfo         print what skull://about reports, and exit
           --check           validate rc.lua and exit
           --locale=LANG     force a language, e.g. --locale=pt_BR
           --version, -v     print the version
@@ -89,6 +105,50 @@ public partial class App : Application
         Configuration lives in %APPDATA%\skull. The browser runs from its own
         built-in copy until you run --init, after which files on disk win.
         """;
+
+    /// <summary>
+    /// The same facts skull://about shows, on the console. Worth having on its
+    /// own: a bug report can paste this without a screenshot, and it proves the
+    /// about page reads the machine rather than reciting constants.
+    /// </summary>
+    private static string SysInfo()
+    {
+        string runtime;
+        try
+        {
+            runtime = Microsoft.Web.WebView2.Core.CoreWebView2Environment
+                .GetAvailableBrowserVersionString() ?? "not installed";
+        }
+        catch (Exception ex)
+        {
+            runtime = "not installed (" + ex.GetType().Name + ")";
+        }
+
+        var rows = new (string, string)[]
+        {
+            ("version", Pages.Version + " (" + Pages.Codename + ")"),
+            ("author", Pages.Author + ", " + Pages.Homepage),
+            ("built", SystemInfo.BuildDate),
+            ("commit", SystemInfo.Commit + " on " + SystemInfo.Branch),
+            ("configuration", SystemInfo.Configuration),
+            ("packaging", SystemInfo.IsSingleFile ? "single file, portable" : "folder"),
+            ("engine", "WebView2 " + runtime),
+            ("framework", SystemInfo.DotNet),
+            ("architecture", SystemInfo.Architecture),
+            ("operating system", SystemInfo.Os + " " + SystemInfo.OsArchitecture),
+            ("processors", SystemInfo.Cpus),
+            ("memory", SystemInfo.Memory),
+            ("profile", Profile.Dir),
+            ("executable", SystemInfo.ExecutablePath),
+        };
+
+        var sb = new StringBuilder();
+        foreach (var (label, value) in rows)
+        {
+            sb.AppendLine(label.PadRight(18) + value);
+        }
+        return sb.ToString().TrimEnd();
+    }
 
     private static string Init()
     {

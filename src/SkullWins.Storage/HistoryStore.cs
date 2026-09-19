@@ -19,6 +19,9 @@ public sealed class HistoryStore : IDisposable
         _db = new SqliteConnection($"Data Source={path}");
         _db.Open();
         Exec("PRAGMA journal_mode=WAL;");
+        // Two copies of the browser can point at one profile. Without a
+        // timeout the second one throws the moment their writes collide.
+        Exec("PRAGMA busy_timeout=3000;");
         Exec("""
             CREATE TABLE IF NOT EXISTS history (
                 uri        TEXT PRIMARY KEY,

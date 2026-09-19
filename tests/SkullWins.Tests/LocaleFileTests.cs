@@ -57,6 +57,21 @@ public class LocaleFileTests
         Assert.True(KeysOf("pt_BR").Count > 50);
     }
 
+    [Theory]
+    [InlineData("normal")]
+    [InlineData("insert")]
+    [InlineData("command")]
+    [InlineData("passthrough")]
+    [InlineData("follow")]
+    public void Every_mode_has_a_status_bar_label(string mode)
+    {
+        // The status bar builds its key as "mode." + the mode name, so a mode
+        // added without a catalogue entry shows the raw key to the user. That
+        // happened once already, with follow.
+        Assert.Contains("mode." + mode, KeysOf("en"));
+        Assert.Contains("mode." + mode, KeysOf("pt_BR"));
+    }
+
     [Fact]
     public void Every_bind_description_key_is_translated()
     {

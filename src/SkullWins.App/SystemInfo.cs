@@ -19,17 +19,6 @@ public static class SystemInfo
     public static string Branch => BuildInfo.Branch;
     public static string Configuration => BuildInfo.Configuration;
 
-    public static string BuildYear
-    {
-        get
-        {
-            var ok = DateTime.TryParse(
-                BuildInfo.Date, CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal, out var when);
-            return ok ? when.Year.ToString(CultureInfo.InvariantCulture) : "";
-        }
-    }
-
     public static string DotNet => RuntimeInformation.FrameworkDescription;
 
     public static string Architecture => RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant();
@@ -77,21 +66,6 @@ public static class SystemInfo
     }
 
     public static string Cpus => Environment.ProcessorCount.ToString(CultureInfo.InvariantCulture);
-
-    public static string Uptime
-    {
-        get
-        {
-            try
-            {
-                var span = DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime;
-                if (span.TotalHours >= 1) { return (int)span.TotalHours + "h " + span.Minutes + "m"; }
-                if (span.TotalMinutes >= 1) { return (int)span.TotalMinutes + "m " + span.Seconds + "s"; }
-                return (int)span.TotalSeconds + "s";
-            }
-            catch { return "-"; }
-        }
-    }
 
     /// <summary>
     /// Where the executable actually is. Under a single-file build this is the

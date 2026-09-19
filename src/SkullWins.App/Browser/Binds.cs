@@ -55,6 +55,11 @@ public static class Binds
         // modes
         normal.Add("i", "bind.insert", _ => { w.UseMode("insert"); return true; });
         normal.Add(":", "bind.command", _ => { w.UseMode("command"); return true; });
+        normal.Add("o", "bind.open", _ => { w.OpenCommand("open "); return true; });
+        normal.Add("O", "bind.open_here",
+            _ => { w.OpenCommand("open " + w.CurrentUri); return true; });
+        normal.Add("T", "bind.open_tab",
+            _ => { w.OpenCommand("tabopen "); return true; });
         normal.Add("<control-z>", "bind.passthrough",
             _ => { w.UseMode("passthrough"); return true; });
 

@@ -132,29 +132,15 @@ public class PageTests
     }
 
     private static AboutFacts Facts() => new(
-        Codename: "first blood",
-        BuildYear: "2026",
         BuildDate: "2026-09-19 12:00:00 UTC",
         Commit: "abc1234",
-        Branch: "main",
-        Configuration: "Release",
-        SingleFile: true,
         Runtime: "153.0.4234.48",
         DotNet: ".NET 10.0.8",
-        Architecture: "x64",
         Os: "Windows 11 Pro build 26200",
-        OsArchitecture: "x64",
-        Cpus: "16",
-        Memory: "32 GB",
-        Uptime: "3m 20s",
-        Language: "en",
-        ProfileDir: @"C:\Users\x\AppData\Roaming\skull",
-        ExecutablePath: @"C:\tools\skull.exe",
-        HistoryCount: "42",
-        BookmarkCount: "7");
+        ProfileDir: @"C:\Users\x\AppData\Roaming\skull");
 
     [Fact]
-    public void About_reports_the_program_and_its_author()
+    public void About_names_the_program_and_its_author()
     {
         var html = Pages.About(English(), Facts());
         Assert.Contains("0.01", html);
@@ -163,36 +149,26 @@ public class PageTests
     }
 
     [Fact]
-    public void About_reports_the_exact_build()
+    public void About_identifies_the_exact_binary()
     {
         var html = Pages.About(English(), Facts());
         Assert.Contains("abc1234", html);
         Assert.Contains("2026-09-19 12:00:00 UTC", html);
-        Assert.Contains("2026", html);
     }
 
     [Fact]
-    public void About_reports_the_machine_and_the_engine()
+    public void About_reports_the_machine_it_runs_on()
     {
         var html = Pages.About(English(), Facts());
         Assert.Contains("153.0.4234.48", html);
         Assert.Contains(".NET 10.0.8", html);
         Assert.Contains("Windows 11 Pro build 26200", html);
-        Assert.Contains("32 GB", html);
     }
 
     [Fact]
     public void About_links_the_repository()
         => Assert.Contains("github.com/runawaydevil/skull_browser_win",
             Pages.About(English(), Facts()));
-
-    [Fact]
-    public void About_says_whether_the_build_is_portable()
-    {
-        Assert.Contains("single file", Pages.About(English(), Facts()));
-        Assert.Contains("folder with dependencies",
-            Pages.About(English(), Facts() with { SingleFile = false }));
-    }
 
     [Fact]
     public void Empty_history_says_so_instead_of_rendering_a_blank_table()

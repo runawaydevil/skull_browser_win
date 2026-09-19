@@ -39,6 +39,14 @@ public sealed class GopherClient
             return new GopherResponse(type, [], "no host in gopher url");
         }
 
+        // A gopher URL names a host, a port and the bytes to send. Without this
+        // check that is a way to speak to any service on the network from a
+        // link, which is the whole point of the blocked-port list.
+        if (Gopher.IsBlockedPort(port))
+        {
+            return new GopherResponse(type, [], "port " + port + " is not allowed for gopher");
+        }
+
         try
         {
             using var client = new TcpClient();

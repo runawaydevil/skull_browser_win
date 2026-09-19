@@ -28,11 +28,11 @@ public partial class MainWindow : Window
     private int _current = -1;
 
     private readonly Locale _locale = new();
-    private readonly Signals _signals = new();
     private readonly Dictionary<string, BindTable> _modes = new(StringComparer.Ordinal);
     private BindTable _active = new();
     private string _mode = "normal";
     private string _buffer = "";
+    private string _pendingCommand = "";
 
     private HistoryStore? _history;
     private BookmarkStore? _bookmarks;
@@ -137,9 +137,35 @@ public partial class MainWindow : Window
     /// <summary>Fire and forget wrapper, so a bind can stay synchronous.</summary>
     public void OpenTab(string uri) => _ = NewTab(uri);
 
+    /// <summary>
+    /// A page can forge the key messages that open tabs, because the injected
+    /// script and a hostile copy of it look identical on the wire. It cannot be
+    /// told apart, so it is capped instead: past this point a runaway page
+    /// annoys the user rather than exhausting the machine.
+    /// </summary>
+    public const int MaxTabs = 50;
+
     public async Task NewTab(string uri)
     {
+        try { await CreateTab(uri); }
+        catch (Exception ex)
+        {
+            // Called from async void handlers, so an escape here takes the whole
+            // process with it. One tab failing must cost one tab.
+            Log("could not open " + uri + ": " + ex);
+            Notify(_locale.Translate("notify.tabfailed", ex.Message));
+        }
+    }
+
+    private async Task CreateTab(string uri)
+    {
         if (_env is null) { return; }
+
+        if (_tabs.Count >= MaxTabs)
+        {
+            Notify(_locale.Translate("notify.toomanytabs", MaxTabs));
+            return;
+        }
 
         var view = new WebView2 { Visibility = Visibility.Collapsed };
         TabArea.Children.Add(view);
@@ -148,7 +174,14 @@ public partial class MainWindow : Window
         _tabs.Add(tab);
 
         await view.EnsureCoreWebView2Async(_env);
+
+        // The tab was reachable while that await was pending, so it may have
+        // been closed already. Touching a disposed control here would throw
+        // from a continuation nobody is watching.
+        if (!_tabs.Contains(tab)) { return; }
+
         var core = view.CoreWebView2;
+        if (core is null) { return; }
 
         core.Settings.AreBrowserAcceleratorKeysEnabled = false;
         core.Settings.AreDefaultContextMenusEnabled = false;
@@ -162,9 +195,13 @@ public partial class MainWindow : Window
 
         await core.AddScriptToExecuteOnDocumentCreatedAsync(_inputScript);
 
-        core.WebMessageReceived += (_, e) => OnWebMessage(e.WebMessageAsJson);
+        // Web messages carry no proof of origin: the keyboard script runs in
+        // every page, so a hostile page can forge anything the real one sends.
+        // The tab is passed through so the handler can tell whether the message
+        // came from the tab the user is actually looking at.
+        core.WebMessageReceived += (_, e) => OnWebMessage(e.WebMessageAsJson, tab);
         core.FrameCreated += (_, e) =>
-            e.Frame.WebMessageReceived += (_, fe) => OnWebMessage(fe.WebMessageAsJson);
+            e.Frame.WebMessageReceived += (_, fe) => OnWebMessage(fe.WebMessageAsJson, tab);
 
         core.DocumentTitleChanged += (_, _) => { tab.Title = core.DocumentTitle; RenderTabs(); };
         core.SourceChanged += (_, _) => UpdateStatus();
@@ -176,9 +213,22 @@ public partial class MainWindow : Window
         };
         core.ProcessFailed += (_, e) =>
         {
-            if (e.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited)
+            switch (e.ProcessFailedKind)
             {
-                Notify("tab crashed, press r to reload");
+                case CoreWebView2ProcessFailedKind.RenderProcessExited:
+                    Notify(_locale.Translate("notify.tabcrashed"));
+                    break;
+
+                // The shared engine process died, so every tab is dead with it.
+                // Nothing here can be recovered by reloading one of them.
+                case CoreWebView2ProcessFailedKind.BrowserProcessExited:
+                    Log("browser process exited: " + e.Reason);
+                    Notify(_locale.Translate("notify.enginedied"));
+                    break;
+
+                default:
+                    Log("webview process failed: " + e.ProcessFailedKind + " " + e.Reason);
+                    break;
             }
         };
 
@@ -235,6 +285,17 @@ public partial class MainWindow : Window
 
     // ----------------------------------------------------------------- modes
 
+    /// <summary>
+    /// Open the command bar with something already typed. Without this, the one
+    /// thing every new user wants to do first, type an address, has no
+    /// discoverable key at all.
+    /// </summary>
+    public void OpenCommand(string prefill)
+    {
+        _pendingCommand = prefill;
+        UseMode("command");
+    }
+
     public void UseMode(string mode)
     {
         _mode = mode;
@@ -249,9 +310,10 @@ public partial class MainWindow : Window
         if (mode == "command")
         {
             CmdBox.Visibility = Visibility.Visible;
-            CmdBox.Text = ":";
-            CmdBox.CaretIndex = 1;
+            CmdBox.Text = ":" + _pendingCommand;
+            CmdBox.CaretIndex = CmdBox.Text.Length;
             CmdBox.Focus();
+            _pendingCommand = "";
         }
         else
         {
@@ -278,8 +340,12 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnWebMessage(string json)
+    private void OnWebMessage(string json, Tab from)
     {
+        // A background tab has no business driving the browser. This alone
+        // stops a page in another tab from acting while the user is elsewhere.
+        if (!ReferenceEquals(from, Current)) { return; }
+
         JsonDocument doc;
         try { doc = JsonDocument.Parse(json); } catch { return; }
 
@@ -298,13 +364,28 @@ public partial class MainWindow : Window
                 // The hint overlay runs its own key loop inside the page and
                 // tells us when it is done, so follow mode never gets stuck.
                 case "mode-request":
-                    UseMode(root.GetProperty("mode").GetString() ?? "normal");
+                    // The overlay uses this to say it is finished. It can only
+                    // ever return to normal, and only from follow mode, so a
+                    // page cannot push the browser into a mode of its choosing.
+                    if (_mode == "follow") { UseMode("normal"); }
                     break;
 
                 case "follow":
-                    OpenTab(root.GetProperty("uri").GetString() ?? "skull://newtab");
+                {
+                    // Only meaningful while the hint overlay is up. Outside that
+                    // window it is a forgery, and even inside it the target is
+                    // attacker-influenced, so it goes through the allow-list.
+                    if (_mode != "follow") { break; }
+
+                    var target = root.TryGetProperty("uri", out var u) ? u.GetString() : null;
                     UseMode("normal");
+
+                    if (target is not null && Trust.IsPageNavigable(target))
+                    {
+                        OpenTab(target);
+                    }
                     break;
+                }
 
                 case "key":
                     var key = root.GetProperty("key").GetString() ?? "";
@@ -358,6 +439,10 @@ public partial class MainWindow : Window
         try { _ = Current?.View.CoreWebView2?.ExecuteScriptAsync(script); } catch { }
     }
 
+    /// <summary>
+    /// Navigate from the command bar. A person typed this, so it gets the full
+    /// resolver, including file: paths and search fallback.
+    /// </summary>
     public void Navigate(string input)
     {
         var uri = Uris.Resolve(input);
@@ -386,18 +471,27 @@ public partial class MainWindow : Window
         var uri = Current.Uri;
         if (uri.Length == 0) { return; }
 
-        if (_bookmarks.Contains(uri))
+        // A locked database is a routine event, not a reason to lose every tab.
+        try
         {
-            _bookmarks.Remove(uri);
-            Notify(_locale.Translate("notify.unbookmarked", Current.Title));
+            if (_bookmarks.Contains(uri))
+            {
+                _bookmarks.Remove(uri);
+                Notify(_locale.Translate("notify.unbookmarked", Current.Title));
+            }
+            else
+            {
+                _bookmarks.Add(uri, Current.Title);
+                Notify(_locale.Translate("notify.bookmarked", Current.Title));
+            }
         }
-        else
+        catch (Exception ex)
         {
-            _bookmarks.Add(uri, Current.Title);
-            Notify(_locale.Translate("notify.bookmarked", Current.Title));
+            Notify(_locale.Translate("notify.storage", ex.Message));
         }
     }
 
+    public string CurrentUri => Current?.Uri ?? "";
     public Locale Translator => _locale;
     public HistoryStore? History => _history;
     public BookmarkStore? Bookmarks => _bookmarks;
@@ -485,8 +579,8 @@ public partial class MainWindow : Window
         {
             "about" => Pages.About(_locale, Facts()),
             "help" or "binds" => Pages.Help(_locale, HelpRows()),
-            "history" => Pages.History(_locale, _history?.Recent(200) ?? []),
-            "bookmarks" => Pages.Bookmarks(_locale, _bookmarks?.All() ?? []),
+            "history" => Read(() => Pages.History(_locale, _history?.Recent(200) ?? [])),
+            "bookmarks" => Read(() => Pages.Bookmarks(_locale, _bookmarks?.All() ?? [])),
             "newtab" or "" => Pages.NewTab(_locale),
             "log" => Pages.GopherText("skull://log", ReadLog()),
             _ => Pages.Error(_locale, "error.scheme", "no such internal page: " + page, uri),
@@ -495,31 +589,25 @@ public partial class MainWindow : Window
 
     /// <summary>Gather everything skull://about reports.</summary>
     private AboutFacts Facts() => new(
-        Codename: Pages.Codename,
-        BuildYear: SystemInfo.BuildYear,
         BuildDate: SystemInfo.BuildDate,
         Commit: SystemInfo.Commit,
-        Branch: SystemInfo.Branch,
-        Configuration: SystemInfo.Configuration,
-        SingleFile: SystemInfo.IsSingleFile,
         Runtime: _env?.BrowserVersionString ?? "-",
         DotNet: SystemInfo.DotNet,
-        Architecture: SystemInfo.Architecture,
         Os: SystemInfo.Os,
-        OsArchitecture: SystemInfo.OsArchitecture,
-        Cpus: SystemInfo.Cpus,
-        Memory: SystemInfo.Memory,
-        Uptime: SystemInfo.Uptime,
-        Language: _locale.Active,
-        ProfileDir: Profile.Dir,
-        ExecutablePath: SystemInfo.ExecutablePath,
-        HistoryCount: SafeCount(() => _history?.Count() ?? 0),
-        BookmarkCount: SafeCount(() => _bookmarks?.All().Count ?? 0));
+        ProfileDir: Profile.Dir);
 
-    private static string SafeCount(Func<int> read)
+    /// <summary>
+    /// Render a page that reads the database. A failure here shows an error
+    /// page, which is what the user opened the page to find out about anyway.
+    /// </summary>
+    private string Read(Func<string> render)
     {
-        try { return read().ToString(); }
-        catch { return "-"; }
+        try { return render(); }
+        catch (Exception ex)
+        {
+            Log("page read failed: " + ex.Message);
+            return Pages.Error(_locale, "error.storage", ex.Message, "skull://");
+        }
     }
 
     private IEnumerable<(string, string)> HelpRows()
@@ -584,7 +672,12 @@ public partial class MainWindow : Window
     {
         var modeLabel = _locale.Translate("mode." + _mode);
         StatusMode.Text = modeLabel.Length > 0 ? modeLabel : "";
-        StatusUri.Text = Current?.Uri ?? "";
+
+        // With no tab open there is nothing to show and nothing to guess from,
+        // so the status bar says how to get somewhere.
+        StatusUri.Text = Current?.Uri is { Length: > 0 } uri
+            ? uri
+            : _locale.Translate("status.hint");
 
         var right = new StringBuilder();
         if (_buffer.Length > 0) { right.Append(_buffer).Append("  "); }

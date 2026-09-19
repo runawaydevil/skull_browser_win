@@ -65,70 +65,27 @@ public static class Pages
         static string Row(string label, string value) =>
             $"<tr><th>{Esc(label)}</th><td>{value}</td></tr>";
 
-        var program = new StringBuilder();
-        program.Append(Row(t.Translate("about.version"), Esc(Version) + " (" + Esc(f.Codename) + ")"));
-        program.Append(Row(t.Translate("about.released"), Esc(f.BuildYear)));
-        program.Append(Row(t.Translate("about.license"),
+        var rows = new StringBuilder();
+        rows.Append(Row(t.Translate("about.version"), Esc(Version)));
+        rows.Append(Row(t.Translate("about.author"),
+            Esc(Author) + " &middot; <a href=\"" + Esc(Homepage) + "\">" + Esc(Homepage) + "</a>"));
+        rows.Append(Row(t.Translate("about.license"),
             "<a href=\"https://www.gnu.org/licenses/gpl-3.0.html\">GNU GPLv3</a>"));
-        program.Append(Row(t.Translate("about.source"),
+        rows.Append(Row(t.Translate("about.source"),
             "<a href=\"" + Esc(Repository) + "\">" + Esc(Repository) + "</a>"));
-
-        var author = new StringBuilder();
-        author.Append(Row(t.Translate("about.author"), Esc(Author)));
-        author.Append(Row(t.Translate("about.site"),
-            "<a href=\"" + Esc(Homepage) + "\">" + Esc(Homepage) + "</a>"));
-
-        var build = new StringBuilder();
-        build.Append(Row(t.Translate("about.built"), Esc(f.BuildDate)));
-        build.Append(Row(t.Translate("about.commit"), "<code>" + Esc(f.Commit) + "</code> on " + Esc(f.Branch)));
-        build.Append(Row(t.Translate("about.config"), Esc(f.Configuration)));
-        build.Append(Row(t.Translate("about.packaging"),
-            Esc(f.SingleFile ? t.Translate("about.portable") : t.Translate("about.folder"))));
-
-        var engine = new StringBuilder();
-        engine.Append(Row(t.Translate("about.engine"), "WebView2 " + Esc(f.Runtime)));
-        engine.Append(Row(t.Translate("about.framework"), Esc(f.DotNet)));
-        engine.Append(Row(t.Translate("about.lua"), "Lua 5.4 (NLua)"));
-        engine.Append(Row(t.Translate("about.arch"), Esc(f.Architecture)));
-
-        var system = new StringBuilder();
-        system.Append(Row(t.Translate("about.os"), Esc(f.Os) + " " + Esc(f.OsArchitecture)));
-        system.Append(Row(t.Translate("about.cpus"), Esc(f.Cpus)));
-        system.Append(Row(t.Translate("about.memory"), Esc(f.Memory)));
-        system.Append(Row(t.Translate("about.uptime"), Esc(f.Uptime)));
-
-        var profile = new StringBuilder();
-        profile.Append(Row(t.Translate("about.language"), Esc(f.Language)));
-        profile.Append(Row(t.Translate("about.profile"), "<code>" + Esc(f.ProfileDir) + "</code>"));
-        profile.Append(Row(t.Translate("about.executable"), "<code>" + Esc(f.ExecutablePath) + "</code>"));
-        profile.Append(Row(t.Translate("about.history"), Esc(f.HistoryCount)));
-        profile.Append(Row(t.Translate("about.bookmarks"), Esc(f.BookmarkCount)));
+        rows.Append(Row(t.Translate("about.built"),
+            Esc(f.BuildDate) + " &middot; <code>" + Esc(f.Commit) + "</code>"));
+        rows.Append(Row(t.Translate("about.engine"), "WebView2 " + Esc(f.Runtime)));
+        rows.Append(Row(t.Translate("about.framework"), Esc(f.DotNet)));
+        rows.Append(Row(t.Translate("about.os"), Esc(f.Os)));
+        rows.Append(Row(t.Translate("about.profile"), "<code>" + Esc(f.ProfileDir) + "</code>"));
 
         return Shell("about", $"""
             <h1>Skull Wins {Version}</h1>
             <p class="sub">{Esc(t.Translate("about.tagline"))}</p>
-
-            <h2>{Esc(t.Translate("about.program"))}</h2>
-            <table>{program}</table>
-
-            <h2>{Esc(t.Translate("about.authorship"))}</h2>
-            <table>{author}</table>
-
-            <h2>{Esc(t.Translate("about.build"))}</h2>
-            <table>{build}</table>
-
-            <h2>{Esc(t.Translate("about.runtime"))}</h2>
-            <table>{engine}</table>
-
-            <h2>{Esc(t.Translate("about.system"))}</h2>
-            <table>{system}</table>
-
-            <h2>{Esc(t.Translate("about.session"))}</h2>
-            <table>{profile}</table>
-
+            <table>{rows}</table>
             <h2>{Esc(t.Translate("about.protocols"))}</h2>
-            <p>https, http, <a href="gopher://gopher.floodgap.com">gopher</a>, skull,
-               <span class="sub">gemini ({Esc(t.Translate("about.registered"))})</span></p>
+            <p>https, http, <a href="gopher://gopher.floodgap.com">gopher</a>, skull</p>
             """);
     }
 
@@ -291,23 +248,9 @@ public static class Pages
 /// needs Windows APIs that do not belong in a rendering module.
 /// </summary>
 public sealed record AboutFacts(
-    string Codename,
-    string BuildYear,
     string BuildDate,
     string Commit,
-    string Branch,
-    string Configuration,
-    bool SingleFile,
     string Runtime,
     string DotNet,
-    string Architecture,
     string Os,
-    string OsArchitecture,
-    string Cpus,
-    string Memory,
-    string Uptime,
-    string Language,
-    string ProfileDir,
-    string ExecutablePath,
-    string HistoryCount,
-    string BookmarkCount);
+    string ProfileDir);

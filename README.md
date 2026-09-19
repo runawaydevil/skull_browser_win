@@ -129,6 +129,17 @@ why it can be tested against recorded captures instead of a live server.
 docs/design.md has the rest.
 
 
+## Security
+
+A page is never trusted. Navigation asked for by a page goes through a scheme
+allow-list, control messages are only honoured from the tab in front, and no
+control character reaches the gopher wire. docs/adr/010-untrusted-pages.md has
+the reasoning and the exploit chain it closes.
+
+rc.lua runs with full access to the host, like a shell profile. It is your own
+file; do not run someone else's.
+
+
 ## License
 
 GNU GPLv3. See LICENSE.
