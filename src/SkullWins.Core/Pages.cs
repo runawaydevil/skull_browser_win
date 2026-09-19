@@ -46,6 +46,14 @@ public static class Pages
         .empty { color:var(--dim); font-style:italic; }
         .gopher { font:14px/1.6 Consolas, 'Courier New', monospace; white-space:pre-wrap; }
         .gopher .t { color:var(--dim); user-select:none; }
+        .gemlink { margin:.15rem 0; }
+        .gemlink a::before { content:"=> "; color:var(--dim); }
+        blockquote { border-left:2px solid var(--line); margin:.6rem 0;
+                     padding:.1rem 0 .1rem 1rem; color:var(--dim); font-style:italic; }
+        pre { background:#1a1a1a; border:1px solid var(--line); padding:.7rem 1rem;
+              overflow-x:auto; font:13px/1.45 Consolas, monospace; }
+        ul { margin:.4rem 0; padding-left:1.4rem; }
+        p:empty { min-height:.7rem; }
         .err { border-left:3px solid #d08a8a; padding:.2rem 0 .2rem 1rem; margin:1.5rem 0; }
         .err h1 { color:#d08a8a; }
         """;
@@ -214,6 +222,109 @@ public static class Pages
         }
 
         body.Append("</div>");
+        return Shell(uri, body.ToString());
+    }
+
+    /// <summary>
+    /// Render gemtext.
+    ///
+    /// The format is line-oriented with one bit of state, so this is one pass
+    /// with a flag. The rules that need care come from the specification: a
+    /// blank line is meaningful, two text lines never merge into one, and a
+    /// prefix nobody recognises is text rather than an error.
+    /// </summary>
+    /// <summary>
+    /// A gemini server asking a question, status 10 or 11.
+    ///
+    /// Rendered as a page rather than answered automatically: the answer goes
+    /// back as the query part of the same URL, and the user has to see what is
+    /// being asked before typing into it. A status 11 is asking for something
+    /// that should not be echoed, and the field says so.
+    /// </summary>
+    public static string GeminiInput(Locale t, string uri, string prompt, bool sensitive)
+    {
+        var key = sensitive ? "gemini.input.sensitive" : "gemini.input";
+
+        return Shell(uri, $"""
+            <h1>{Esc(t.Translate("gemini.input.title"))}</h1>
+            <p class="sub">{Esc(uri)}</p>
+            <p>{Esc(prompt.Length > 0 ? prompt : t.Translate("gemini.input.noprompt"))}</p>
+            <h2>{Esc(t.Translate(key))}</h2>
+            <p>{Esc(t.Translate("gemini.input.how"))}</p>
+            """);
+    }
+
+    public static string Gemtext(string uri, IReadOnlyList<GemtextLine> lines)
+    {
+        var body = new StringBuilder();
+        body.Append("<h1>").Append(Esc(uri)).Append("</h1>");
+
+        var inList = false;
+        var inPre = false;
+
+        void CloseList()
+        {
+            if (inList) { body.Append("</ul>"); inList = false; }
+        }
+
+        foreach (var line in lines)
+        {
+            if (line.Kind != GemtextKind.ListItem) { CloseList(); }
+
+            switch (line.Kind)
+            {
+                case GemtextKind.PreformatToggle:
+                    if (inPre) { body.Append("</pre>"); }
+                    else
+                    {
+                        // The alt text is for anyone who cannot see the block.
+                        body.Append("<pre");
+                        if (line.Text.Length > 0)
+                        {
+                            body.Append(" aria-label=\"").Append(Esc(line.Text)).Append('"');
+                        }
+                        body.Append('>');
+                    }
+                    inPre = !inPre;
+                    break;
+
+                case GemtextKind.Preformatted:
+                    body.Append(Esc(line.Text)).Append('\n');
+                    break;
+
+                case GemtextKind.Heading:
+                    var tag = "h" + Math.Clamp(line.Level + 1, 2, 4);
+                    body.Append('<').Append(tag).Append('>')
+                        .Append(Esc(line.Text))
+                        .Append("</").Append(tag).Append('>');
+                    break;
+
+                case GemtextKind.Link:
+                    var target = Protocols.Gemtext.Resolve(uri, line.Target);
+                    body.Append("<div class=\"gemlink\"><a href=\"").Append(Esc(target))
+                        .Append("\">").Append(Esc(line.Text)).Append("</a></div>");
+                    break;
+
+                case GemtextKind.ListItem:
+                    if (!inList) { body.Append("<ul>"); inList = true; }
+                    body.Append("<li>").Append(Esc(line.Text)).Append("</li>");
+                    break;
+
+                case GemtextKind.Quote:
+                    body.Append("<blockquote>").Append(Esc(line.Text)).Append("</blockquote>");
+                    break;
+
+                default:
+                    // A blank line is a blank paragraph, not nothing: it is how
+                    // an author separates their paragraphs.
+                    body.Append("<p>").Append(Esc(line.Text)).Append("</p>");
+                    break;
+            }
+        }
+
+        CloseList();
+        if (inPre) { body.Append("</pre>"); }
+
         return Shell(uri, body.ToString());
     }
 

@@ -26,7 +26,7 @@ public static class Trust
     /// the profile directory, and there is no reason a remote document should
     /// reach the local disk.
     /// </summary>
-    private static readonly string[] PageNavigable = ["http", "https", "gopher", "skull"];
+    private static readonly string[] PageNavigable = ["http", "https", "gopher", "gemini", "skull"];
 
     public static bool IsPageNavigable(string uri)
     {

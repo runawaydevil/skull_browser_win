@@ -41,6 +41,8 @@ public partial class MainWindow : Window
     private HistoryStore? _history;
     private BookmarkStore? _bookmarks;
     private readonly GopherClient _gopher = new();
+    private readonly GeminiClient _gemini = new();
+    private TrustStore? _trust;
     private string _inputScript = "";
 
     public MainWindow()
@@ -76,6 +78,7 @@ public partial class MainWindow : Window
         {
             _history = new HistoryStore(Profile.HistoryDb);
             _bookmarks = new BookmarkStore(Profile.BookmarksDb);
+            _trust = new TrustStore(Profile.TrustDb);
         }
         catch (Exception ex)
         {
@@ -736,8 +739,10 @@ public partial class MainWindow : Window
 
         if (uri.StartsWith("gemini://", StringComparison.OrdinalIgnoreCase))
         {
-            Respond(e, Pages.Error(_locale, "error.scheme",
-                "gemini is registered but not implemented in 0.01", uri), "text/html");
+            // Same deferral shape as gopher: the event is synchronous and this
+            // needs a TLS handshake and a round trip.
+            var geminiDeferral = e.GetDeferral();
+            _ = FetchGemini(uri, e, geminiDeferral);
         }
     }
 
@@ -779,6 +784,138 @@ public partial class MainWindow : Window
         finally
         {
             deferral.Complete();
+        }
+    }
+
+    /// <summary>
+    /// Fetch a gemini URL and turn whatever comes back into a page.
+    ///
+    /// Redirects are followed here rather than handed to the engine, because
+    /// the specification requires the client to stop at five and the engine
+    /// has no idea it is counting.
+    /// </summary>
+    private async Task FetchGemini(
+        string uri, CoreWebView2WebResourceRequestedEventArgs e, CoreWebView2Deferral deferral)
+    {
+        try
+        {
+            var current = uri;
+
+            for (var hop = 0; ; hop++)
+            {
+                var response = await _gemini.FetchAsync(current, TrustCertificate);
+
+                if (!response.Ok)
+                {
+                    Respond(e, Pages.Error(_locale, "error.gemini", response.Error!, current),
+                        "text/html");
+                    return;
+                }
+
+                switch (response.Class)
+                {
+                    case GeminiClass.Redirect:
+                        if (hop >= Gemini.MaxRedirects)
+                        {
+                            Respond(e, Pages.Error(_locale, "error.gemini",
+                                _locale.Translate("gemini.toomanyredirects", Gemini.MaxRedirects),
+                                current), "text/html");
+                            return;
+                        }
+
+                        var next = Gemtext.Resolve(current, response.Meta);
+                        if (!Trust.IsPageNavigable(next))
+                        {
+                            // A redirect is a server telling the browser where
+                            // to go, so it gets the same allow-list a page does.
+                            Respond(e, Pages.Error(_locale, "error.gemini",
+                                _locale.Translate("gemini.badredirect", response.Meta),
+                                current), "text/html");
+                            return;
+                        }
+
+                        current = next;
+                        continue;
+
+                    case GeminiClass.Success:
+                        Respond(e, RenderGemini(current, response), MimeFor(response.Meta));
+                        return;
+
+                    case GeminiClass.Input:
+                        Respond(e, Pages.GeminiInput(_locale, current, response.Meta,
+                            Gemini.IsSensitiveInput(response.Status)), "text/html");
+                        return;
+
+                    default:
+                        Respond(e, Pages.Error(_locale, "error.gemini",
+                            Gemini.Describe(response.Status)
+                                + (response.Meta.Length > 0 ? ": " + response.Meta : ""),
+                            current), "text/html");
+                        return;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Respond(e, Pages.Error(_locale, "error.gemini", ex.Message, uri), "text/html");
+        }
+        finally
+        {
+            deferral.Complete();
+        }
+    }
+
+    private string RenderGemini(string uri, GeminiResponse response)
+    {
+        var text = Encoding.UTF8.GetString(response.Body);
+
+        if (response.Meta.StartsWith("text/gemini", StringComparison.OrdinalIgnoreCase))
+        {
+            return Pages.Gemtext(uri, SkullWins.Protocols.Gemtext.Parse(text));
+        }
+
+        // Anything else that is text still reads better as a page than as a
+        // download prompt.
+        return Pages.GopherText(uri, text);
+    }
+
+    private static string MimeFor(string meta)
+        => meta.StartsWith("text/", StringComparison.OrdinalIgnoreCase) ? "text/html" : "text/html";
+
+    /// <summary>
+    /// The trust decision for a gemini certificate.
+    ///
+    /// A host never seen before is pinned. The same certificate passes. A
+    /// different one while the pinned certificate is still valid is refused,
+    /// because that is what an interception looks like; the user is told and
+    /// can accept it deliberately.
+    /// </summary>
+    private bool TrustCertificate(string host, int port, CertificateFacts certificate)
+    {
+        if (_trust is null) { return false; }
+
+        try
+        {
+            var verdict = _trust.Check(host, port, certificate.Fingerprint, certificate.NotAfter);
+
+            if (verdict == TrustVerdict.Changed)
+            {
+                Log($"refused {host}:{port}: certificate changed before the pinned one expired");
+                return false;
+            }
+
+            if (verdict == TrustVerdict.Rotated)
+            {
+                Log($"{host}:{port}: certificate rotated after the old one expired");
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Unable to consult the pins is not a reason to trust anything.
+            Log("trust check failed for " + host + ": " + ex.Message);
+            return false;
         }
     }
 
@@ -966,6 +1103,7 @@ public partial class MainWindow : Window
         foreach (var tab in _tabs) { try { tab.View.Dispose(); } catch { } }
         _history?.Dispose();
         _bookmarks?.Dispose();
+        _trust?.Dispose();
         base.OnClosed(e);
     }
 }
