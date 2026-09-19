@@ -72,6 +72,30 @@
         });
     }, true);
 
+    // A text field taking focus means the user is about to type words, not
+    // commands. luakit switches to insert mode here, and without it clicking a
+    // search box and typing fires key bindings instead of writing.
+    function isEditable(el) {
+        if (!el) { return false; }
+        if (el.isContentEditable) { return true; }
+        var tag = el.tagName;
+        if (tag === "TEXTAREA" || tag === "SELECT") { return true; }
+        if (tag !== "INPUT") { return false; }
+
+        // Checkboxes, radios and buttons are not places you type.
+        var type = (el.type || "text").toLowerCase();
+        return ["text", "search", "url", "email", "password", "tel", "number",
+                "date", "time", "datetime-local", "month", "week"].indexOf(type) >= 0;
+    }
+
+    document.addEventListener("focusin", function (ev) {
+        if (isEditable(ev.target)) { bridge.postMessage({ type: "editable", on: true }); }
+    }, true);
+
+    document.addEventListener("focusout", function (ev) {
+        if (isEditable(ev.target)) { bridge.postMessage({ type: "editable", on: false }); }
+    }, true);
+
     // Diagnostic: tell the host this frame was reached by the injection.
     bridge.postMessage({
         type: "hello",

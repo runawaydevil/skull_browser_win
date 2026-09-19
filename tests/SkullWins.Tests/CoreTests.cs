@@ -343,3 +343,57 @@ public class LocaleTests
         Assert.Equal(new[] { "only.english" }, missingFromPt);
     }
 }
+
+/// <summary>
+/// A keypress arriving from the page has to produce the same trigger string a
+/// bind was registered under. Getting this wrong silently disables every bind
+/// that needs shift, which is how the command bar became unreachable in 0.01:
+/// typing ":" is shift and semicolon, and the trigger came out as
+/// "&lt;shift-:&gt;" while the bind was stored as ":".
+/// </summary>
+public class KeyRoundTripTests
+{
+    [Theory]
+    // what the user presses, what the browser reports, the modifiers it reports
+    [InlineData("j", "j", "")]
+    [InlineData("J", "J", "shift")]
+    [InlineData(":", ":", "shift")]
+    [InlineData("$", "$", "shift")]
+    [InlineData("%", "%", "shift")]
+    [InlineData("^", "^", "shift")]
+    [InlineData("<", "<", "shift")]
+    [InlineData(">", ">", "shift")]
+    [InlineData("?", "?", "shift")]
+    [InlineData("<control-d>", "d", "control")]
+    [InlineData("<control-w>", "w", "control")]
+    [InlineData("Escape", "Escape", "")]
+    [InlineData("Home", "Home", "")]
+    public void A_registered_bind_matches_the_key_that_arrives(
+        string registered, string reportedKey, string reportedMods)
+    {
+        var fired = false;
+        var table = new BindTable();
+        table.Add(registered, "", _ => { fired = true; return true; });
+
+        var result = Dispatcher.Feed(table, reportedKey, reportedMods, "", bufferEnabled: true);
+
+        Assert.True(fired, $"bind \"{registered}\" did not match key \"{reportedKey}\" with mods \"{reportedMods}\"");
+        Assert.True(result.Handled);
+    }
+
+    [Fact]
+    public void Shift_with_a_capital_letter_is_not_counted_twice()
+        => Assert.Equal(Triggers.Normalise("J"), Triggers.FromKey("J", "shift"));
+
+    [Fact]
+    public void A_shifted_symbol_keeps_the_symbol_and_drops_the_shift()
+        => Assert.Equal(":", Triggers.FromKey(":", "shift"));
+
+    [Fact]
+    public void Control_and_shift_together_still_reach_a_capital_bind()
+        => Assert.Equal(Triggers.Normalise("<control-R>"), Triggers.FromKey("R", "control-shift"));
+
+    [Fact]
+    public void Modifier_order_from_the_page_does_not_matter()
+        => Assert.Equal(Triggers.FromKey("a", "control-shift"), Triggers.FromKey("a", "shift-control"));
+}

@@ -12,11 +12,11 @@ namespace SkullWins.Core;
 /// </summary>
 public static class Pages
 {
-    public const string Version = "0.01";
+    public const string Version = "0.11";
     public const string Author = "Pablo Murad";
     public const string Homepage = "https://pablomurad.com";
     public const string Repository = "https://github.com/runawaydevil/skull_browser_win";
-    public const string Codename = "first blood";
+    public const string Codename = "muscle memory";
 
     public static string Style => """
         :root {

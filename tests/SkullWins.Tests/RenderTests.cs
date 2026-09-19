@@ -143,7 +143,10 @@ public class PageTests
     public void About_names_the_program_and_its_author()
     {
         var html = Pages.About(English(), Facts());
-        Assert.Contains("0.01", html);
+
+        // Follows the constant rather than repeating it, so a version bump does
+        // not mean editing a test that is not about versions.
+        Assert.Contains(Pages.Version, html);
         Assert.Contains("Pablo Murad", html);
         Assert.Contains("https://pablomurad.com", html);
     }

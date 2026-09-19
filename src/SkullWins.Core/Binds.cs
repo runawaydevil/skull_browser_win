@@ -92,14 +92,33 @@ public static class Triggers
     /// </summary>
     public static string FromKey(string key, string modifiers)
     {
-        if (string.IsNullOrEmpty(modifiers))
+        var mods = modifiers.Length == 0
+            ? new List<string>()
+            : modifiers.Split('-').ToList();
+
+        // A single printable character already carries the shift in its own
+        // identity. The browser reports shift+j as "J" and shift+; as ":", so
+        // keeping shift in the trigger as well would double-count it and the
+        // lookup would miss every capital and every shifted symbol. Letters
+        // fold down to lowercase plus shift; everything else drops shift and
+        // keeps the character it produced.
+        if (key.Length == 1)
         {
-            return key.Length == 1 && char.IsUpper(key[0])
-                ? "<shift-" + char.ToLowerInvariant(key[0]) + ">"
-                : key;
+            if (char.IsUpper(key[0]))
+            {
+                key = char.ToLowerInvariant(key[0]).ToString();
+                if (!mods.Contains("shift")) { mods.Add("shift"); }
+            }
+            else if (!char.IsLetter(key[0]))
+            {
+                mods.Remove("shift");
+            }
         }
 
-        return "<" + modifiers + "-" + key + ">";
+        if (mods.Count == 0) { return key; }
+
+        mods.Sort(StringComparer.Ordinal);
+        return "<" + string.Join('-', mods) + "-" + key + ">";
     }
 }
 

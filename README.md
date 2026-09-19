@@ -4,7 +4,7 @@ A keyboard-driven web browser for Windows. Modal navigation in the vim
 tradition, gopher as a first-class protocol, and configuration that is code
 rather than a settings screen.
 
-Version 0.01, by Pablo Murad. Windows only.
+Version 0.11, by Pablo Murad. Windows only.
 
 This is a separate program from Skull Browser, which runs on Linux. They share
 a design and no code.
@@ -58,36 +58,63 @@ A single-file portable executable:
 
 ## Keys
 
-    j k h l       scroll
-    gg  G         top, bottom
-    C-d  C-u      half a screen
-    space         a full screen
-    H  L          back, forward
-    r             reload
-    f  F          follow a link, follow into a new tab
-    t  C-w        new tab, close tab
-    gt  gT        next tab, previous tab
-    d             bookmark the current page
-    i             insert mode, keys go to the page
-    C-z           passthrough mode, every key goes to the page
-    :             command bar
-    Escape        back to normal mode
-    gA gH gh gb   about, help, history, bookmarks
+The map follows luakit. Where luakit binds a key, that key does the same thing
+here, even where another one would have been nicer, because muscle memory is
+the point of a modal browser. Keys luakit has no equivalent for are marked.
+
+    motion
+      j k h l       scroll down, up, left, right
+      gg  G         top, bottom
+      0  ^  $       top, far left, far right
+      50%           go to 50 percent of the page
+      C-d  C-u      half a screen down, up
+      C-f  C-b      a full screen down, up
+      space         a full screen down
+
+    history
+      H  L          back, forward
+      C-o  C-i      back, forward
+      Backspace     back
+      r  R          reload, reload skipping the cache
+      C-c           stop loading
+
+    opening
+      o  t          open an address, open it in a new tab
+      O  T          the same, starting from the current address
+
+    tabs
+      J  K          next tab, previous tab
+      gt  gT        next tab, previous tab
+      g0  g$        first tab, last tab
+      C-t  C-w      new tab, close tab
+      d             close tab
+      <  >          move this tab left, right
+      gy            duplicate this tab
+
+    finding
+      f  F          label the links, follow one, or follow into a new tab
+      /  ?          search the page forwards, backwards
+      n  N          next match, previous match
+
+    the rest
+      y             copy the address                       (not in luakit: y yanks there too)
+      gh  gH        start page, start page in a new tab
+      zi zo zz      zoom in, out, reset                    (not in luakit)
+      gA gb gB gi   about, bookmarks, bookmark this, history  (not in luakit)
+      F1            help                                   (luakit binds this too)
+      i             insert mode, keys go to the page
+      C-z           passthrough, every key goes to the page
+      :             command bar
+      ZZ  ZQ        quit
+      Escape        back to normal mode
+
+Focusing a text box switches to insert mode on its own, the way luakit does it,
+so clicking a search field and typing writes text instead of firing bindings.
+Escape gets you back.
 
 Commands: open, tabopen, quit, quitall, reload, back, forward, about, help,
 history, bookmarks, bookmark, gopher, log. Most have short aliases; see
 skull://help.
-
-
-## What about reports
-
-skull://about, or press gA, prints the exact binary you are running and what
-it is running on: version and codename, build date and commit, whether the
-build is a single file or a folder, the WebView2 and .NET versions, the
-operating system and its build number, processors and memory, the profile
-path, and how many pages and bookmarks are stored.
-
-A bug report with that page in it names the exact binary.
 
 
 ## Configuration

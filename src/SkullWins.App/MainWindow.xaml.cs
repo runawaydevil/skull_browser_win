@@ -4,7 +4,9 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
+using System.Runtime.InteropServices;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using SkullWins.App.Browser;
@@ -33,6 +35,8 @@ public partial class MainWindow : Window
     private string _mode = "normal";
     private string _buffer = "";
     private string _pendingCommand = "";
+    private string _searchTerm = "";
+    private bool _searchForward = true;
 
     private HistoryStore? _history;
     private BookmarkStore? _bookmarks;
@@ -98,6 +102,13 @@ public partial class MainWindow : Window
 
         var startUris = App.StartupUris.Count > 0 ? App.StartupUris : new List<string> { StartUri };
         foreach (var uri in startUris) { await NewTab(uri); }
+
+        // Windows refuses to let one process hand the foreground to another, but
+        // a window may always raise itself. Without this the browser can open
+        // behind whatever was already on screen and swallow the first keys.
+        Activate();
+        Current?.View.Focus();
+
 
         UpdateStatus();
     }
@@ -309,8 +320,16 @@ public partial class MainWindow : Window
 
         if (mode == "command")
         {
+            // WebView2 hosts its own child window, and that window holds the
+            // Win32 keyboard focus. CmdBox.Focus() moves only WPF's logical
+            // focus, so without this the typing still goes to the page and the
+            // command bar sits there empty.
+            TakeKeyboardFromWebView();
+
             CmdBox.Visibility = Visibility.Visible;
-            CmdBox.Text = ":" + _pendingCommand;
+            CmdBox.Text = _pendingCommand.StartsWith('/') || _pendingCommand.StartsWith('?')
+                ? _pendingCommand
+                : ":" + _pendingCommand;
             CmdBox.CaretIndex = CmdBox.Text.Length;
             CmdBox.Focus();
             _pendingCommand = "";
@@ -370,6 +389,19 @@ public partial class MainWindow : Window
                     if (_mode == "follow") { UseMode("normal"); }
                     break;
 
+                // luakit switches to insert mode the moment a form field takes
+                // focus, and without that, clicking a search box and typing
+                // fires key bindings instead of writing text. Entering insert
+                // is a reduction in what the browser will act on, so a page
+                // asking for it cannot gain anything by lying.
+                case "editable":
+                {
+                    var editable = root.TryGetProperty("on", out var on) && on.GetBoolean();
+                    if (editable && _mode == "normal") { UseMode("insert"); }
+                    else if (!editable && _mode == "insert") { UseMode("normal"); }
+                    break;
+                }
+
                 case "follow":
                 {
                     // Only meaningful while the hint overlay is up. Outside that
@@ -416,6 +448,26 @@ public partial class MainWindow : Window
         return string.Join('-', parts);
     }
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetFocus(IntPtr hWnd);
+
+    /// <summary>
+    /// Pull the Win32 keyboard focus back to the WPF window, out of the child
+    /// window WebView2 creates for itself.
+    /// </summary>
+    private void TakeKeyboardFromWebView()
+    {
+        try
+        {
+            var handle = new WindowInteropHelper(this).Handle;
+            if (handle != IntPtr.Zero) { SetFocus(handle); }
+        }
+        catch (Exception ex)
+        {
+            Log("could not move keyboard focus: " + ex.Message);
+        }
+    }
+
     private void OnCommandBarKey(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
@@ -425,9 +477,20 @@ public partial class MainWindow : Window
         }
         else if (e.Key == Key.Return)
         {
-            var line = CmdBox.Text.TrimStart(':').Trim();
+            var text = CmdBox.Text;
             UseMode("normal");
-            Commands.Run(this, line);
+
+            // The bar doubles as the search prompt, the way it does in vim.
+            if (text.StartsWith('/') || text.StartsWith('?'))
+            {
+                _searchForward = text[0] == '/';
+                Find(text[1..].Trim());
+            }
+            else
+            {
+                Commands.Run(this, text.TrimStart(':').Trim());
+            }
+
             e.Handled = true;
         }
     }
@@ -450,10 +513,128 @@ public partial class MainWindow : Window
         catch (Exception ex) { Notify(ex.Message); }
     }
 
-    public void Reload() => Current?.View.CoreWebView2?.Reload();
+    public void Reload(bool skipCache = false)
+    {
+        var core = Current?.View.CoreWebView2;
+        if (core is null) { return; }
+
+        // Reload() honours the cache. To skip it, ask the page to reload with
+        // the flag, which is what R does in every browser with vim keys.
+        if (skipCache) { Eval("location.reload(true)"); }
+        else { core.Reload(); }
+    }
+
     public void Stop() => Current?.View.CoreWebView2?.Stop();
-    public void Back() => Current?.View.GoBack();
-    public void Forward() => Current?.View.GoForward();
+
+    public void Back(int times = 1)
+    {
+        for (var i = 0; i < Math.Max(1, times); i++)
+        {
+            if (Current?.View.CanGoBack != true) { break; }
+            Current.View.GoBack();
+        }
+    }
+
+    public void Forward(int times = 1)
+    {
+        for (var i = 0; i < Math.Max(1, times); i++)
+        {
+            if (Current?.View.CanGoForward != true) { break; }
+            Current.View.GoForward();
+        }
+    }
+
+    /// <summary>Jump to a tab by index; out of range clamps to the ends.</summary>
+    public void SelectTab(int index) => Select(index);
+
+    /// <summary>Move the current tab left or right in the strip.</summary>
+    public void MoveTab(int offset)
+    {
+        if (_tabs.Count < 2 || Current is null) { return; }
+
+        var target = Math.Clamp(_current + offset, 0, _tabs.Count - 1);
+        if (target == _current) { return; }
+
+        var tab = _tabs[_current];
+        _tabs.RemoveAt(_current);
+        _tabs.Insert(target, tab);
+        Select(target);
+    }
+
+    /// <summary>Copy the current address to the clipboard.</summary>
+    public void YankUri()
+    {
+        var uri = CurrentUri;
+        if (uri.Length == 0) { return; }
+
+        try
+        {
+            Clipboard.SetText(uri);
+            Notify(_locale.Translate("notify.yanked", uri));
+        }
+        catch (Exception ex)
+        {
+            // The clipboard is shared with every other program and can be
+            // locked by any of them.
+            Notify(_locale.Translate("notify.yankfailed", ex.Message));
+        }
+    }
+
+    /// <summary>Open the command bar ready for an in-page search.</summary>
+    public void OpenSearch(bool forward)
+    {
+        _searchForward = forward;
+        OpenCommand(forward ? "/" : "?");
+    }
+
+    /// <summary>
+    /// Run an in-page search. WebView2 has no find API of its own, so this
+    /// drives the DevTools protocol, which is what the engine's own find bar
+    /// uses underneath.
+    /// </summary>
+    public async void Find(string term)
+    {
+        var core = Current?.View.CoreWebView2;
+        if (core is null) { return; }
+
+        _searchTerm = term;
+        if (term.Length == 0) { return; }
+
+        try
+        {
+            var args = JsonSerializer.Serialize(new
+            {
+                text = term,
+                findNext = false,
+                searchInFrames = true,
+                matchCase = false,
+                backward = !_searchForward,
+            });
+            await core.CallDevToolsProtocolMethodAsync("Page.searchInResource", args);
+            Eval(FindScript(term, _searchForward));
+        }
+        catch (Exception ex)
+        {
+            Log("find failed: " + ex.Message);
+        }
+    }
+
+    public void FindAgain(bool forward)
+    {
+        if (_searchTerm.Length == 0) { return; }
+        Eval(FindScript(_searchTerm, forward));
+    }
+
+    /// <summary>
+    /// window.find is old, non-standard and present in every Chromium. For an
+    /// in-page search that is exactly what is wanted: no UI, wraps around, and
+    /// it moves the real selection so the page scrolls to the hit.
+    /// </summary>
+    private static string FindScript(string term, bool forward)
+    {
+        var json = JsonSerializer.Serialize(term);
+        return $"window.find({json}, false, {(forward ? "false" : "true")}, true, false, true, false)";
+    }
 
     public void Zoom(double delta)
     {
