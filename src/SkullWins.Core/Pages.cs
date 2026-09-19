@@ -78,7 +78,9 @@ public static class Pages
         rows.Append(Row(t.Translate("about.engine"), "WebView2 " + Esc(f.Runtime)));
         rows.Append(Row(t.Translate("about.framework"), Esc(f.DotNet)));
         rows.Append(Row(t.Translate("about.os"), Esc(f.Os)));
-        rows.Append(Row(t.Translate("about.profile"), "<code>" + Esc(f.ProfileDir) + "</code>"));
+        rows.Append(Row(t.Translate("about.profile"),
+            "<code>" + Esc(f.ProfileDir) + "</code> <span class=\"sub\">"
+            + Esc(t.Translate("about." + f.ProfileKind)) + "</span>"));
 
         return Shell("about", $"""
             <h1>Skull Wins {Version}</h1>
@@ -253,4 +255,5 @@ public sealed record AboutFacts(
     string Runtime,
     string DotNet,
     string Os,
-    string ProfileDir);
+    string ProfileDir,
+    string ProfileKind);

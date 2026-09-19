@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using System.Text;
+using SkullWins.Core;
 
 namespace SkullWins.App;
 
@@ -18,20 +19,146 @@ public static class Profile
 {
     public const string FolderName = "skull";
 
-    public static string Dir { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), FolderName);
+    /// <summary>The folder written beside the executable when portable.</summary>
+    public const string PortableFolder = "skull-data";
+
+    private static ProfileChoice? _choice;
+
+    /// <summary>
+    /// The chosen root and how it was chosen. Resolved once, on first read, so
+    /// the command line has already been parsed by then.
+    ///
+    /// Everything derived goes through here rather than through separate
+    /// fields. Splitting them once meant --sysinfo printed the portable path
+    /// while claiming it was roaming, because it read the path without ever
+    /// asking how it had been decided.
+    /// </summary>
+    public static ProfileChoice Choice => _choice ??= Resolve();
+
+    public static string Dir => Choice.Path;
+
+    /// <summary>True when the profile sits beside the executable.</summary>
+    public static bool IsPortable => Choice.IsPortable;
+
+    public static RootKind Kind => Choice.Kind;
+
+    /// <summary>Why that root was chosen, shown in about and --sysinfo.</summary>
+    public static string Reason => Choice.Reason;
 
     public static string WebViewProfile => Path.Combine(Dir, "profile");
     public static string HistoryDb => Path.Combine(Dir, "history.db");
     public static string BookmarksDb => Path.Combine(Dir, "bookmarks.db");
+    public static string TrustDb => Path.Combine(Dir, "trust.db");
+    public static string IdentitiesDir => Path.Combine(Dir, "identities");
     public static string RcLua => Path.Combine(Dir, "rc.lua");
     public static string ThemeLua => Path.Combine(Dir, "theme.lua");
     public static string LogFile => Path.Combine(Dir, "skull.log");
+
+    public static string RoamingDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), FolderName);
+
+    /// <summary>
+    /// The folder beside the executable, or null under a build where that
+    /// cannot be determined.
+    /// </summary>
+    public static string? BesideExecutable
+    {
+        get
+        {
+            try
+            {
+                var exe = Environment.ProcessPath;
+                if (string.IsNullOrEmpty(exe)) { return null; }
+
+                var dir = Path.GetDirectoryName(exe);
+                return string.IsNullOrEmpty(dir) ? null : Path.Combine(dir, PortableFolder);
+            }
+            catch { return null; }
+        }
+    }
+
+    /// <summary>
+    /// Pick the profile root.
+    ///
+    /// Beside the executable when that can be written to, so a browser carried
+    /// on a stick carries its history, its pinned certificates and its
+    /// identities with it. %APPDATA% when it cannot, because a copy installed
+    /// under Program Files must still open.
+    /// </summary>
+    /// <summary>
+    /// Where the profile goes. The decision itself lives in
+    /// <see cref="ProfileRoot"/> so it can be tested without a real disk; this
+    /// only supplies the candidates and the writability probe.
+    /// </summary>
+    public static ProfileChoice Resolve() => ProfileRoot.Decide(
+        new ProfileRoot.Request(App.ProfileOverride, App.ForcePortable, App.ForceRoaming),
+        BesideExecutable,
+        RoamingDir,
+        CanWrite);
+
+    /// <summary>
+    /// Probe by writing, not by reading attributes. A network share or a group
+    /// policy can refuse a write that the attributes say is allowed.
+    /// </summary>
+    private static bool CanWrite(string dir)
+    {
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var probe = Path.Combine(dir, ".write-probe");
+            File.WriteAllText(probe, "");
+            File.Delete(probe);
+            return true;
+        }
+        catch { return false; }
+    }
 
     public static void EnsureDir()
     {
         Directory.CreateDirectory(Dir);
         Directory.CreateDirectory(WebViewProfile);
+        Directory.CreateDirectory(IdentitiesDir);
+    }
+
+    /// <summary>
+    /// Copy an existing %APPDATA% profile into a fresh portable one, once.
+    ///
+    /// Without this, someone who has been using the browser sees an empty
+    /// history the first time they run a portable copy, which looks exactly
+    /// like data loss. Only runs when the destination is genuinely new, so it
+    /// can never overwrite work.
+    /// </summary>
+    public static IReadOnlyList<string> MigrateFromRoaming()
+    {
+        var moved = new List<string>();
+
+        if (!IsPortable) { return moved; }
+        if (string.Equals(Dir, RoamingDir, StringComparison.OrdinalIgnoreCase)) { return moved; }
+        if (!Directory.Exists(RoamingDir)) { return moved; }
+
+        // "Fresh" means no databases and no config. The probe file and the
+        // directories EnsureDir just created do not count.
+        var alreadyUsed = File.Exists(HistoryDb) || File.Exists(BookmarksDb)
+            || File.Exists(RcLua) || File.Exists(ThemeLua);
+        if (alreadyUsed) { return moved; }
+
+        foreach (var name in new[] { "history.db", "bookmarks.db", "trust.db", "rc.lua", "theme.lua" })
+        {
+            var from = Path.Combine(RoamingDir, name);
+            if (!File.Exists(from)) { continue; }
+
+            try
+            {
+                File.Copy(from, Path.Combine(Dir, name), overwrite: false);
+                moved.Add(name);
+            }
+            catch (IOException)
+            {
+                // A file in use is skipped rather than failing the whole move.
+            }
+        }
+
+        return moved;
     }
 
     /// <summary>

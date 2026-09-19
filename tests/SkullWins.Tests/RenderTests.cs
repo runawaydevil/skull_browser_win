@@ -137,7 +137,8 @@ public class PageTests
         Runtime: "153.0.4234.48",
         DotNet: ".NET 10.0.8",
         Os: "Windows 11 Pro build 26200",
-        ProfileDir: @"C:\Users\x\AppData\Roaming\skull");
+        ProfileDir: @"C:\Users\x\AppData\Roaming\skull",
+        ProfileKind: "roaming");
 
     [Fact]
     public void About_names_the_program_and_its_author()

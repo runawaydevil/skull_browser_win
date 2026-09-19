@@ -50,6 +50,33 @@ public class LocaleFileTests
             "missing from en: " + string.Join(", ", missingFromEn));
     }
 
+    [Theory]
+    [InlineData("locale/en.lua")]
+    [InlineData("locale/pt_BR.lua")]
+    [InlineData("rc.lua")]
+    [InlineData("theme.lua")]
+    public void The_shipped_copy_matches_the_embedded_one(string relative)
+    {
+        // These files exist twice: once under lua/ and config/ where they are
+        // edited, and once under Resources/ where they are compiled into the
+        // executable. Nothing but this test stops them drifting apart, and when
+        // they drift the browser ships strings nobody can see in the source.
+        var root = RepoRoot();
+        var source = relative.StartsWith("locale/", StringComparison.Ordinal)
+            ? Path.Combine(root, "lua", relative.Replace('/', Path.DirectorySeparatorChar))
+            : Path.Combine(root, "config", relative);
+        var embedded = Path.Combine(
+            root, "src", "SkullWins.App", "Resources",
+            relative.Replace('/', Path.DirectorySeparatorChar));
+
+        Assert.True(File.Exists(source), "missing: " + source);
+        Assert.True(File.Exists(embedded), "missing: " + embedded);
+
+        Assert.Equal(
+            File.ReadAllText(source).ReplaceLineEndings("\n"),
+            File.ReadAllText(embedded).ReplaceLineEndings("\n"));
+    }
+
     [Fact]
     public void Catalogues_are_not_empty()
     {

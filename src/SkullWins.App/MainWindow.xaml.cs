@@ -57,6 +57,15 @@ public partial class MainWindow : Window
     private async Task Boot()
     {
         Profile.EnsureDir();
+
+        // Someone who has been using the browser and then runs a portable copy
+        // would otherwise open to an empty history, which looks like data loss.
+        var moved = Profile.MigrateFromRoaming();
+        if (moved.Count > 0)
+        {
+            Log("migrated from " + Profile.RoamingDir + ": " + string.Join(", ", moved));
+        }
+
         LoadLocales();
         Binds.Install(this, _modes, _locale);
         UseMode("normal");
@@ -798,7 +807,8 @@ public partial class MainWindow : Window
         Runtime: _env?.BrowserVersionString ?? "-",
         DotNet: SystemInfo.DotNet,
         Os: SystemInfo.Os,
-        ProfileDir: Profile.Dir);
+        ProfileDir: Profile.Dir,
+        ProfileKind: Profile.IsPortable ? "portable" : "roaming");
 
     /// <summary>
     /// Render a page that reads the database. A failure here shows an error

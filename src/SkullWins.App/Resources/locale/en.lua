@@ -19,6 +19,8 @@ return {
     ["about.framework"]       = "framework",
     ["about.os"]              = "system",
     ["about.profile"]         = "profile",
+    ["about.portable"]     = "beside the executable",
+    ["about.roaming"]      = "in your user profile",
     ["about.protocols"]       = "protocols",
 
     ["status.hint"]        = "press o to open a site, : for a command",

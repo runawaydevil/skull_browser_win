@@ -18,6 +18,8 @@ return {
     ["about.framework"]       = "plataforma",
     ["about.os"]              = "sistema",
     ["about.profile"]         = "perfil",
+    ["about.portable"]     = "ao lado do executavel",
+    ["about.roaming"]      = "no seu perfil de usuario",
     ["about.protocols"]       = "protocolos",
 
     ["status.hint"]        = "tecle o para abrir um site, : para um comando",

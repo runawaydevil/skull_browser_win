@@ -12,6 +12,12 @@ public partial class App : Application
     public static List<string> StartupUris { get; } = new();
     public static string? LocaleOverride { get; private set; }
 
+    // Read by Profile when it resolves the root. Parsed before any window
+    // exists, because the log file lives under that root too.
+    public static string? ProfileOverride { get; private set; }
+    public static bool ForcePortable { get; private set; }
+    public static bool ForceRoaming { get; private set; }
+
     [DllImport("kernel32.dll")]
     private static extern bool AttachConsole(int processId);
 
@@ -78,6 +84,15 @@ public partial class App : Application
                 continue;
             }
 
+            if (arg.StartsWith("--profile=", StringComparison.Ordinal))
+            {
+                ProfileOverride = arg["--profile=".Length..];
+                continue;
+            }
+
+            if (arg == "--portable") { ForcePortable = true; continue; }
+            if (arg == "--no-portable") { ForceRoaming = true; continue; }
+
             if (!arg.StartsWith('-')) { StartupUris.Add(Uris.Resolve(arg)); }
         }
 
@@ -95,15 +110,20 @@ public partial class App : Application
 
         usage: skull [options] [url ...]
 
-          --init            write the configuration into %APPDATA%\skull
+          --init            write the configuration into the profile
+          --portable        keep data beside the executable, fail if it cannot
+          --no-portable     keep data in %APPDATA%\skull
+          --profile=PATH    keep data in PATH
           --sysinfo         print what skull://about reports, and exit
           --check           validate rc.lua and exit
           --locale=LANG     force a language, e.g. --locale=pt_BR
           --version, -v     print the version
           --help, -h        print this
 
-        Configuration lives in %APPDATA%\skull. The browser runs from its own
-        built-in copy until you run --init, after which files on disk win.
+        Data lives beside the executable, in skull-data, when that folder can be
+        written to. Otherwise it lives in %APPDATA%\skull. Either way the
+        browser runs from its own built-in configuration until you run --init,
+        after which files on disk win. --sysinfo says which one is in use.
         """;
 
     /// <summary>
@@ -138,7 +158,7 @@ public partial class App : Application
             ("operating system", SystemInfo.Os + " " + SystemInfo.OsArchitecture),
             ("processors", SystemInfo.Cpus),
             ("memory", SystemInfo.Memory),
-            ("profile", Profile.Dir),
+            ("profile", Profile.Dir + "  (" + (Profile.IsPortable ? "portable" : "roaming") + ")"),
             ("executable", SystemInfo.ExecutablePath),
         };
 
@@ -152,6 +172,7 @@ public partial class App : Application
 
     private static string Init()
     {
+        Profile.EnsureDir();
         var written = Profile.WriteFactoryCopy();
         if (written.Count == 0)
         {
