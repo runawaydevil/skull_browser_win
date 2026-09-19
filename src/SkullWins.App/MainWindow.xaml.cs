@@ -178,7 +178,15 @@ public partial class MainWindow : Window
             return;
         }
 
-        var view = new WebView2 { Visibility = Visibility.Collapsed };
+        var view = new WebView2
+        {
+            Visibility = Visibility.Collapsed,
+
+            // WebView2 paints white between documents unless told otherwise.
+            // Against a dark interface that is a white flash on every
+            // navigation, which reads as the window flickering.
+            DefaultBackgroundColor = System.Drawing.Color.FromArgb(0x0d, 0x0d, 0x0d),
+        };
         TabArea.Children.Add(view);
 
         var tab = new Tab(view);
@@ -283,7 +291,11 @@ public partial class MainWindow : Window
     private void OnNavigated(Tab tab)
     {
         PushMode();
-        tab.View.Focus();
+
+        // Only the tab in front may take the keyboard. A background tab
+        // finishing a load must not pull focus out from under the user.
+        if (ReferenceEquals(tab, Current)) { tab.View.Focus(); }
+
         UpdateStatus();
 
         var uri = tab.Uri;
@@ -309,6 +321,12 @@ public partial class MainWindow : Window
 
     public void UseMode(string mode)
     {
+        // A page can report focus changes many times a second, and each one asks
+        // for insert mode. Without this guard every report redid the work below,
+        // including moving focus, which is a loop the user sees as flicker.
+        if (_mode == mode) { return; }
+
+        var previous = _mode;
         _mode = mode;
         _buffer = "";
 
@@ -338,7 +356,12 @@ public partial class MainWindow : Window
         {
             CmdBox.Visibility = Visibility.Collapsed;
             CmdBox.Text = "";
-            Current?.View.Focus();
+
+            // Only take the keyboard back if the command bar was holding it.
+            // Calling Focus() on the view at any other time resets the page's
+            // own focus, which fires focusout and focusin, which sends a fresh
+            // mode request straight back here. That loop is what flickers.
+            if (previous == "command") { Current?.View.Focus(); }
         }
 
         PushMode();
@@ -822,30 +845,61 @@ public partial class MainWindow : Window
 
     // --------------------------------------------------------------- chrome
 
+    private static readonly Brush TabSelectedFg = Frozen(0x9f, 0xd1, 0x8a);
+    private static readonly Brush TabFg = Frozen(0x7a, 0x7a, 0x7a);
+    private static readonly Brush TabSelectedBg = Frozen(0x22, 0x22, 0x22);
+    private static readonly Brush TabBg = Brushes.Transparent;
+    private static readonly FontFamily TabFont = new("Consolas");
+
+    private static Brush Frozen(byte r, byte g, byte b)
+    {
+        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
+        brush.Freeze();
+        return brush;
+    }
+
+    /// <summary>
+    /// Update the tab strip in place.
+    ///
+    /// A loading page changes its title several times, and tearing the whole
+    /// strip down and rebuilding it on each one makes the tabs blink. The
+    /// labels are rewritten instead, and controls are only created or removed
+    /// when the number of tabs actually changes.
+    /// </summary>
     private void RenderTabs()
     {
-        TabStrip.Items.Clear();
+        while (TabStrip.Items.Count > _tabs.Count)
+        {
+            TabStrip.Items.RemoveAt(TabStrip.Items.Count - 1);
+        }
+
+        while (TabStrip.Items.Count < _tabs.Count)
+        {
+            TabStrip.Items.Add(new TextBlock
+            {
+                Padding = new Thickness(6, 4, 6, 4),
+                FontFamily = TabFont,
+                FontSize = 12,
+            });
+        }
 
         for (var i = 0; i < _tabs.Count; i++)
         {
+            if (TabStrip.Items[i] is not TextBlock block) { continue; }
+
             var tab = _tabs[i];
             var selected = i == _current;
             var label = tab.Title.Length > 0 ? tab.Title : tab.Uri;
             if (label.Length > 34) { label = label[..33] + "…"; }
 
-            TabStrip.Items.Add(new TextBlock
-            {
-                Text = " " + (i + 1) + " " + label + " ",
-                Padding = new Thickness(6, 4, 6, 4),
-                FontFamily = new FontFamily("Consolas"),
-                FontSize = 12,
-                Foreground = new SolidColorBrush(selected
-                    ? Color.FromRgb(0x9f, 0xd1, 0x8a)
-                    : Color.FromRgb(0x7a, 0x7a, 0x7a)),
-                Background = new SolidColorBrush(selected
-                    ? Color.FromRgb(0x22, 0x22, 0x22)
-                    : Colors.Transparent),
-            });
+            var text = " " + (i + 1) + " " + label + " ";
+            if (block.Text != text) { block.Text = text; }
+
+            var fg = selected ? TabSelectedFg : TabFg;
+            if (!ReferenceEquals(block.Foreground, fg)) { block.Foreground = fg; }
+
+            var bg = selected ? TabSelectedBg : TabBg;
+            if (!ReferenceEquals(block.Background, bg)) { block.Background = bg; }
         }
     }
 

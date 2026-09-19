@@ -93,7 +93,17 @@
     }, true);
 
     document.addEventListener("focusout", function (ev) {
-        if (isEditable(ev.target)) { bridge.postMessage({ type: "editable", on: false }); }
+        if (!isEditable(ev.target)) { return; }
+
+        // Moving between two fields fires focusout then focusin. Reporting the
+        // focusout straight away would drop out of insert mode and back into it
+        // on every tab press, which the user sees as the interface twitching.
+        // One turn of the event loop is enough for the new element to settle.
+        setTimeout(function () {
+            if (!isEditable(document.activeElement)) {
+                bridge.postMessage({ type: "editable", on: false });
+            }
+        }, 0);
     }, true);
 
     // Diagnostic: tell the host this frame was reached by the injection.

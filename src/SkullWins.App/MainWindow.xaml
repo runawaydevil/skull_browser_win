@@ -35,7 +35,9 @@
                        Padding="6,3,8,3" FontFamily="Consolas" FontSize="12" />
         </Grid>
 
-        <Grid x:Name="TabArea" />
+        <!-- Same colour as the engine background, so nothing white shows
+             through while a page is still being painted. -->
+        <Grid x:Name="TabArea" Background="#0d0d0d" />
 
     </DockPanel>
 </Window>

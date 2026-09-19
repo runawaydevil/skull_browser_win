@@ -4,7 +4,7 @@ A keyboard-driven web browser for Windows. Modal navigation in the vim
 tradition, gopher as a first-class protocol, and configuration that is code
 rather than a settings screen.
 
-Version 0.11, by Pablo Murad. Windows only.
+Version 0.12, by Pablo Murad. Windows only.
 
 This is a separate program from Skull Browser, which runs on Linux. They share
 a design and no code.
@@ -23,7 +23,7 @@ a design and no code.
     history, bookmarks    SQLite, with search
     two languages         English and Brazilian Portuguese
 
-Not in 0.01: ad blocking, form filling, user stylesheets, proxies, tab groups,
+Not in 0.12: ad blocking, form filling, user stylesheets, proxies, tab groups,
 private mode, gemini. The gemini scheme is registered but nothing answers it.
 
 
